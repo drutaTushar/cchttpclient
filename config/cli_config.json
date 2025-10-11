@@ -1,0 +1,117 @@
+{
+  "markdown_path": "config/commands.md",
+  "http_timeout": 30,
+  "secrets": {
+    "supabase_api_key": {"type": "env", "env": "SUPABASE_API_KEY"},
+    "supabase_project_id": {"type": "value", "value": "your-project-id"},
+    "s3_default_bucket": {"type": "env", "env": "S3_BUCKET", "encoding": "utf-8"}
+  },
+  "commands": [
+    {
+      "name": "storage",
+      "help": "Interact with storage providers",
+      "subcommands": [
+        {
+          "name": "list",
+          "help": "List objects inside a bucket",
+          "script_section": "storage.list",
+          "arguments": [
+            {
+              "name": "bucket",
+              "help": "Bucket name",
+              "param_type": "argument",
+              "type": "str",
+              "required": true,
+              "location": "path",
+              "target": "bucket"
+            },
+            {
+              "name": "prefix",
+              "help": "Optional prefix filter",
+              "param_type": "option",
+              "cli_name": "--prefix",
+              "type": "str",
+              "required": false,
+              "location": "query",
+              "target": "prefix"
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "https://api.example.com/storage/{bucket}/objects",
+            "headers": {
+              "Accept": "application/json"
+            },
+            "query": {},
+            "body": {
+              "mode": "json",
+              "template": {}
+            },
+            "response": {
+              "mode": "json",
+              "success_codes": [200]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "database",
+      "help": "Supabase-like operations",
+      "subcommands": [
+        {
+          "name": "query",
+          "help": "Run an SQL statement",
+          "script_section": "database.query",
+          "arguments": [
+            {
+              "name": "sql",
+              "help": "SQL query string",
+              "param_type": "argument",
+              "type": "str",
+              "required": true,
+              "location": "json",
+              "target": "query"
+            },
+            {
+              "name": "schema",
+              "help": "Database schema",
+              "param_type": "option",
+              "cli_name": "--schema",
+              "type": "str",
+              "required": false,
+              "default": "public",
+              "location": "json",
+              "target": "schema"
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "https://api.example.com/database/query",
+            "headers": {
+              "Content-Type": "application/json",
+              "Accept": "application/json"
+            },
+            "query": {},
+            "body": {
+              "mode": "json",
+              "template": {}
+            },
+            "response": {
+              "mode": "json",
+              "success_codes": [200, 201]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "mcp": {
+    "embedding_model": "text-embedding-3-small",
+    "persist_path": "data/mcp_embeddings.sqlite",
+    "api_key_env": "OPENAI_API_KEY",
+    "api_base": null,
+    "collection_name": "command_descriptions",
+    "top_k": 3
+  }
+}
