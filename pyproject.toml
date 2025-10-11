@@ -10,7 +10,8 @@ dependencies = [
   "pyyaml>=6.0",
   "fastapi>=0.110",
   "uvicorn>=0.29",
-  "numpy>=1.26"
+  "numpy>=1.26",
+  "openai>=1.0"
 ]
 
 [project.optional-dependencies]

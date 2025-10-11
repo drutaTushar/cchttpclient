@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Dynamic CLI Control Panel</title>
+    <style>
+        body { 
+            font-family: system-ui, sans-serif; 
+            margin: 0; 
+            background: #f5f5f5; 
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        h1 { margin-top: 0; color: #333; }
+        h2 { color: #555; border-bottom: 2px solid #eee; padding-bottom: 0.5rem; }
+        section { 
+            background: white; 
+            padding: 1.5rem; 
+            border-radius: 8px; 
+            margin-bottom: 1.5rem; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+        }
+        textarea { 
+            width: 100%; 
+            min-height: 120px; 
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 0.5rem;
+            resize: vertical;
+        }
+        .code-editor {
+            min-height: 200px;
+        }
+        button { 
+            padding: 0.75rem 1.5rem; 
+            margin-right: 0.5rem; 
+            margin-bottom: 0.5rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-secondary:hover { background: #545b62; }
+        .btn-success:hover { background: #1e7e34; }
+        .btn-danger:hover { background: #bd2130; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #ddd; }
+        th { background: #f8f9fa; font-weight: 600; }
+        tr:hover { background: #f8f9fa; }
+        
+        label { 
+            display: block; 
+            font-weight: 600; 
+            margin-bottom: 0.25rem; 
+            color: #555;
+        }
+        input[type="text"], input[type="number"], select { 
+            width: 100%; 
+            padding: 0.5rem; 
+            margin-bottom: 1rem; 
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        #test-output { 
+            white-space: pre-wrap; 
+            background: #1a1a1a; 
+            color: #e5e5e5; 
+            padding: 1rem; 
+            border-radius: 6px; 
+            min-height: 100px; 
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+        .status {
+            padding: 0.5rem;
+            margin-left: 1rem;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.info { background: #cce7ff; color: #004085; }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 1rem;
+        }
+        .tab {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border: none;
+            background: none;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active {
+            border-bottom-color: #007bff;
+            color: #007bff;
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        
+        .command-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .command-actions button {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dynamic CLI Control Panel</h1>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('commands')">Commands</button>
+            <button class="tab" onclick="showTab('create')">Create Command</button>
+            <button class="tab" onclick="showTab('test')">Test</button>
+            <button class="tab" onclick="showTab('config')">Raw Config</button>
+        </div>
+
+        <!-- Commands Tab -->
+        <div id="commands-tab" class="tab-content active">
+            <section>
+                <h2>Command Catalog</h2>
+                <p>Manage your CLI commands. Commands are stored in a single JSON configuration file.</p>
+                <table id="command-table">
+                    <thead>
+                        <tr>
+                            <th>Command</th>
+                            <th>Subcommand</th>
+                            <th>Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <button class="btn-secondary" onclick="refreshCommands()">Refresh</button>
+            </section>
+        </div>
+
+        <!-- Create Command Tab -->
+        <div id="create-tab" class="tab-content">
+            <section>
+                <h2>Create New Command</h2>
+                <form id="command-form">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="cmd-name">Command Name</label>
+                            <input type="text" id="cmd-name" placeholder="e.g. storage" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="cmd-subcommand">Subcommand</label>
+                            <input type="text" id="cmd-subcommand" placeholder="e.g. upload" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="cmd-method">HTTP Method</label>
+                            <select id="cmd-method">
+                                <option value="GET">GET</option>
+                                <option value="POST">POST</option>
+                                <option value="PUT">PUT</option>
+                                <option value="DELETE">DELETE</option>
+                                <option value="PATCH">PATCH</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="cmd-help">Help Text</label>
+                        <input type="text" id="cmd-help" placeholder="Brief description of what this command does">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="cmd-url">URL Template</label>
+                        <input type="text" id="cmd-url" placeholder="https://api.example.com/v1/{resource}" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="cmd-description">Command Description (for AI)</label>
+                        <textarea id="cmd-description" placeholder="Describe what this command should do. This will be used to generate the request/response processing code."></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="processor-prompt">Processing Instructions (for AI)</label>
+                        <textarea id="processor-prompt" placeholder="Describe how to process the request and response. E.g., 'Add authorization headers, format the response to show only the data field'"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <button type="button" class="btn-primary" onclick="generateCode()">Generate Code with AI</button>
+                        <span id="generate-status" class="status"></span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="prepare-code">Request Preparation Code</label>
+                        <textarea id="prepare-code" class="code-editor" placeholder="def prepare(request, helpers):&#10;    return request"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="response-code">Response Processing Code</label>
+                        <textarea id="response-code" class="code-editor" placeholder="def process_response(response, helpers):&#10;    return response"></textarea>
+                    </div>
+                    
+                    <button type="submit" class="btn-success">Create Command</button>
+                    <span id="create-status" class="status"></span>
+                </form>
+            </section>
+        </div>
+
+        <!-- Test Tab -->
+        <div id="test-tab" class="tab-content">
+            <section>
+                <h2>Command Test Harness</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="test-command">Command</label>
+                        <input type="text" id="test-command" placeholder="e.g. storage" />
+                    </div>
+                    <div class="form-group">
+                        <label for="test-subcommand">Subcommand</label>
+                        <input type="text" id="test-subcommand" placeholder="e.g. upload" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="test-arguments">Arguments JSON</label>
+                    <textarea id="test-arguments" placeholder='{"bucket": "demo", "payload": "{...}"}'></textarea>
+                </div>
+                <button class="btn-primary" onclick="runTest()">Run Test</button>
+                <span id="test-status" class="status"></span>
+                
+                <h3>Result</h3>
+                <pre id="test-output"></pre>
+            </section>
+        </div>
+
+        <!-- Raw Config Tab -->
+        <div id="config-tab" class="tab-content">
+            <section>
+                <h2>Raw Configuration</h2>
+                <p>Direct JSON configuration editing. Changes here will be reflected immediately.</p>
+                <textarea id="config-editor" class="code-editor"></textarea>
+                <div style="margin-top: 1rem;">
+                    <button class="btn-success" onclick="saveConfig()">Save</button>
+                    <button class="btn-secondary" onclick="loadConfig()">Reload</button>
+                    <span id="config-status" class="status"></span>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        // Tab management
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Command management
+        async function refreshCommands() {
+            try {
+                const response = await fetch('/commands');
+                const data = await response.json();
+                const tbody = document.querySelector('#command-table tbody');
+                tbody.innerHTML = '';
+                
+                data.results.forEach((item) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.command}</td>
+                        <td>${item.subcommand}</td>
+                        <td>${item.description}</td>
+                        <td class="command-actions">
+                            <button class="btn-secondary" onclick="editCommand('${item.command}', '${item.subcommand}')">Edit</button>
+                            <button class="btn-danger" onclick="deleteCommand('${item.command}', '${item.subcommand}')">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (error) {
+                console.error('Failed to refresh commands:', error);
+            }
+        }
+
+        async function editCommand(command, subcommand) {
+            // TODO: Implement edit functionality
+            alert('Edit functionality will be implemented');
+        }
+
+        async function deleteCommand(command, subcommand) {
+            if (!confirm(`Delete ${command} ${subcommand}?`)) return;
+            
+            try {
+                const response = await fetch('/commands', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command, subcommand })
+                });
+                
+                if (response.ok) {
+                    refreshCommands();
+                } else {
+                    alert('Failed to delete command');
+                }
+            } catch (error) {
+                console.error('Failed to delete command:', error);
+            }
+        }
+
+        // AI Code Generation
+        async function generateCode() {
+            const description = document.getElementById('cmd-description').value;
+            const processorPrompt = document.getElementById('processor-prompt').value;
+            const method = document.getElementById('cmd-method').value;
+            const url = document.getElementById('cmd-url').value;
+            
+            if (!description || !processorPrompt) {
+                document.getElementById('generate-status').textContent = 'Please provide both description and processing instructions';
+                document.getElementById('generate-status').className = 'status error';
+                return;
+            }
+            
+            document.getElementById('generate-status').textContent = 'Generating code...';
+            document.getElementById('generate-status').className = 'status info';
+            
+            try {
+                const response = await fetch('/generate-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        description,
+                        processor_prompt: processorPrompt,
+                        method,
+                        url
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('prepare-code').value = data.prepare_code;
+                    document.getElementById('response-code').value = data.response_code;
+                    document.getElementById('generate-status').textContent = 'Code generated successfully!';
+                    document.getElementById('generate-status').className = 'status success';
+                } else {
+                    const error = await response.json();
+                    document.getElementById('generate-status').textContent = error.detail || 'Failed to generate code';
+                    document.getElementById('generate-status').className = 'status error';
+                }
+            } catch (error) {
+                document.getElementById('generate-status').textContent = 'Error: ' + error.message;
+                document.getElementById('generate-status').className = 'status error';
+            }
+        }
+
+        // Command creation
+        document.getElementById('command-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = {
+                command: document.getElementById('cmd-name').value,
+                subcommand: document.getElementById('cmd-subcommand').value,
+                help: document.getElementById('cmd-help').value,
+                method: document.getElementById('cmd-method').value,
+                url: document.getElementById('cmd-url').value,
+                prepare_code: document.getElementById('prepare-code').value,
+                response_code: document.getElementById('response-code').value
+            };
+            
+            document.getElementById('create-status').textContent = 'Creating command...';
+            document.getElementById('create-status').className = 'status info';
+            
+            try {
+                const response = await fetch('/commands', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                
+                if (response.ok) {
+                    document.getElementById('create-status').textContent = 'Command created successfully!';
+                    document.getElementById('create-status').className = 'status success';
+                    document.getElementById('command-form').reset();
+                    refreshCommands();
+                } else {
+                    const error = await response.json();
+                    document.getElementById('create-status').textContent = error.detail || 'Failed to create command';
+                    document.getElementById('create-status').className = 'status error';
+                }
+            } catch (error) {
+                document.getElementById('create-status').textContent = 'Error: ' + error.message;
+                document.getElementById('create-status').className = 'status error';
+            }
+        });
+
+        // Config management
+        async function loadConfig() {
+            try {
+                const response = await fetch('/config');
+                const data = await response.json();
+                document.getElementById('config-editor').value = data.content;
+                document.getElementById('config-status').textContent = 'Loaded';
+                document.getElementById('config-status').className = 'status success';
+            } catch (error) {
+                document.getElementById('config-status').textContent = 'Failed to load';
+                document.getElementById('config-status').className = 'status error';
+            }
+        }
+
+        async function saveConfig() {
+            const content = document.getElementById('config-editor').value;
+            try {
+                const response = await fetch('/config', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content })
+                });
+                
+                if (response.ok) {
+                    document.getElementById('config-status').textContent = 'Saved';
+                    document.getElementById('config-status').className = 'status success';
+                    refreshCommands();
+                } else {
+                    const data = await response.json();
+                    document.getElementById('config-status').textContent = data.detail || 'Save failed';
+                    document.getElementById('config-status').className = 'status error';
+                }
+            } catch (error) {
+                document.getElementById('config-status').textContent = 'Error: ' + error.message;
+                document.getElementById('config-status').className = 'status error';
+            }
+        }
+
+        // Test functionality
+        async function runTest() {
+            const command = document.getElementById('test-command').value;
+            const subcommand = document.getElementById('test-subcommand').value;
+            let argsText = document.getElementById('test-arguments').value;
+            let args = {};
+            
+            if (argsText.trim()) {
+                try {
+                    args = JSON.parse(argsText);
+                } catch (err) {
+                    document.getElementById('test-status').textContent = 'Invalid JSON';
+                    document.getElementById('test-status').className = 'status error';
+                    return;
+                }
+            }
+            
+            document.getElementById('test-status').textContent = 'Running...';
+            document.getElementById('test-status').className = 'status info';
+            
+            try {
+                const response = await fetch('/test-command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command, subcommand, arguments: args })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('test-output').textContent = typeof data.output === 'string' ? data.output : JSON.stringify(data.output, null, 2);
+                    document.getElementById('test-status').textContent = 'Success';
+                    document.getElementById('test-status').className = 'status success';
+                } else {
+                    const data = await response.json();
+                    document.getElementById('test-status').textContent = data.detail || 'Error running command';
+                    document.getElementById('test-status').className = 'status error';
+                    document.getElementById('test-output').textContent = '';
+                }
+            } catch (error) {
+                document.getElementById('test-status').textContent = 'Error: ' + error.message;
+                document.getElementById('test-status').className = 'status error';
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshCommands();
+            loadConfig();
+        });
+    </script>
+</body>
+</html>

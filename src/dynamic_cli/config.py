@@ -63,7 +63,8 @@ class SubcommandDefinition:
     name: str
     help: str
     arguments: List[ArgumentDefinition]
-    script_section: str
+    prepare_code: str
+    response_code: str
     request: RequestDefinition
 
 
@@ -86,7 +87,6 @@ class MCPSettings:
 
 @dataclass
 class CLIConfig:
-    markdown_path: Path
     commands: List[CommandDefinition]
     secrets: Dict[str, SecretDefinition]
     mcp: MCPSettings
@@ -95,7 +95,6 @@ class CLIConfig:
     @classmethod
     def load(cls, path: Path) -> "CLIConfig":
         data = json.loads(Path(path).read_text())
-        markdown_path = Path(data["markdown_path"]).expanduser()
         http_timeout = data.get("http_timeout")
 
         secrets = {
@@ -128,7 +127,8 @@ class CLIConfig:
                         name=sub["name"],
                         help=sub.get("help", ""),
                         arguments=[build_argument(arg) for arg in sub.get("arguments", [])],
-                        script_section=sub["script_section"],
+                        prepare_code=sub.get("prepare_code", "def prepare(request, helpers):\n    return request"),
+                        response_code=sub.get("response_code", "def process_response(response, helpers):\n    return response"),
                         request=build_request(sub["request"]),
                     )
                 )
@@ -151,7 +151,6 @@ class CLIConfig:
         )
 
         return cls(
-            markdown_path=markdown_path,
             commands=commands,
             secrets=secrets,
             mcp=mcp_settings,

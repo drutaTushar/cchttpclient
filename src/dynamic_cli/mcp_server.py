@@ -4,19 +4,21 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+import openai
 import typer
 import uvicorn
 
 from .cli import CommandRuntime, _create_handler
 from .config import CLIConfig
 from .embedding import EmbeddingRecord, EmbeddingStore
-from .markdown_parser import parse_markdown_sections
 
 
 class QueryRequest(BaseModel):
@@ -43,146 +45,28 @@ class TestCommandRequest(BaseModel):
     arguments: Dict[str, Any] = Field(default_factory=dict)
 
 
-_UI_HTML = """
-<!DOCTYPE html>
-<html lang=\"en\">
-  <head>
-    <meta charset=\"utf-8\" />
-    <title>Dynamic CLI Control Panel</title>
-    <style>
-      body { font-family: system-ui, sans-serif; margin: 2rem; background: #f5f5f5; }
-      h1 { margin-top: 0; }
-      section { background: white; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-      textarea { width: 100%; min-height: 260px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-      button { padding: 0.5rem 1rem; margin-right: 0.5rem; }
-      table { width: 100%; border-collapse: collapse; }
-      th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #ddd; }
-      tr:hover { background: #f0f0f0; }
-      label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
-      input[type="text"], input[type="number"] { width: 100%; padding: 0.4rem; margin-bottom: 0.6rem; }
-      #test-output { white-space: pre-wrap; background: #111; color: #e5e5e5; padding: 1rem; border-radius: 6px; min-height: 80px; }
-    </style>
-  </head>
-  <body>
-    <h1>Dynamic CLI Control Panel</h1>
-    <section>
-      <h2>Command Catalog</h2>
-      <p>Use semantic search through the MCP API or inspect the current commands here.</p>
-      <table id="command-table">
-        <thead>
-          <tr><th>Command</th><th>Subcommand</th><th>Description</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-      <button id="refresh-commands">Refresh</button>
-    </section>
-    <section>
-      <h2>Configuration</h2>
-      <p>Edit the configuration JSON and press <strong>Save</strong> to persist the changes. The MCP index reloads automatically.</p>
-      <textarea id="config-editor"></textarea>
-      <div style="margin-top:0.75rem;">
-        <button id="save-config">Save</button>
-        <button id="reload-config">Reload</button>
-        <span id="config-status"></span>
-      </div>
-    </section>
-    <section>
-      <h2>Command Test Harness</h2>
-      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem;">
-        <div>
-          <label for="test-command">Command</label>
-          <input type="text" id="test-command" placeholder="e.g. storage" />
-        </div>
-        <div>
-          <label for="test-subcommand">Subcommand</label>
-          <input type="text" id="test-subcommand" placeholder="e.g. upload" />
-        </div>
-      </div>
-      <label for="test-arguments">Arguments JSON</label>
-      <textarea id="test-arguments" style="min-height:140px;" placeholder='{"bucket": "demo", "payload": "{...}"}'></textarea>
-      <div style="margin-top:0.75rem;">
-        <button id="run-test">Run</button>
-        <span id="test-status"></span>
-      </div>
-      <h3>Result</h3>
-      <pre id="test-output"></pre>
-    </section>
-    <script>
-      async function fetchCommands() {
-        const response = await fetch('/commands');
-        const data = await response.json();
-        const tbody = document.querySelector('#command-table tbody');
-        tbody.innerHTML = '';
-        data.results.forEach((item) => {
-          const row = document.createElement('tr');
-          row.innerHTML = `<td>${item.command}</td><td>${item.subcommand}</td><td>${item.description}</td>`;
-          tbody.appendChild(row);
-        });
-      }
+class GenerateCodeRequest(BaseModel):
+    description: str
+    processor_prompt: str
+    method: str = "GET"
+    url: str = ""
 
-      async function loadConfig() {
-        const response = await fetch('/config');
-        const data = await response.json();
-        document.getElementById('config-editor').value = data.content;
-        document.getElementById('config-status').textContent = 'Loaded';
-      }
 
-      async function saveConfig() {
-        const content = document.getElementById('config-editor').value;
-        const response = await fetch('/config', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content })
-        });
-        if (response.ok) {
-          document.getElementById('config-status').textContent = 'Saved';
-          fetchCommands();
-        } else {
-          const data = await response.json();
-          document.getElementById('config-status').textContent = data.detail || 'Save failed';
-        }
-      }
+class CreateCommandRequest(BaseModel):
+    command: str
+    subcommand: str
+    help: str = ""
+    method: str = "GET"
+    url: str
+    prepare_code: str = ""
+    response_code: str = ""
 
-      async function runTest() {
-        const command = document.getElementById('test-command').value;
-        const subcommand = document.getElementById('test-subcommand').value;
-        let argsText = document.getElementById('test-arguments').value;
-        let args = {};
-        if (argsText.trim()) {
-          try {
-            args = JSON.parse(argsText);
-          } catch (err) {
-            document.getElementById('test-status').textContent = 'Invalid JSON';
-            return;
-          }
-        }
-        const response = await fetch('/test-command', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ command, subcommand, arguments: args })
-        });
-        if (response.ok) {
-          const data = await response.json();
-          document.getElementById('test-output').textContent = typeof data.output === 'string' ? data.output : JSON.stringify(data.output, null, 2);
-          document.getElementById('test-status').textContent = 'Success';
-        } else {
-          const data = await response.json();
-          document.getElementById('test-status').textContent = data.detail || 'Error running command';
-          document.getElementById('test-output').textContent = '';
-        }
-      }
 
-      document.getElementById('refresh-commands').addEventListener('click', fetchCommands);
-      document.getElementById('reload-config').addEventListener('click', loadConfig);
-      document.getElementById('save-config').addEventListener('click', saveConfig);
-      document.getElementById('run-test').addEventListener('click', runTest);
+class DeleteCommandRequest(BaseModel):
+    command: str
+    subcommand: str
 
-      fetchCommands();
-      loadConfig();
-    </script>
-  </body>
-</html>
-"""
+
 
 
 class MCPApplication:
@@ -196,7 +80,6 @@ class MCPApplication:
 
     def _load_config(self) -> None:
         self.config = CLIConfig.load(self.config_path)
-        self.sections = parse_markdown_sections(self.config.markdown_path)
 
     def _reload_config(self) -> None:
         previous_store = getattr(self, "store", None)
@@ -210,18 +93,24 @@ class MCPApplication:
         records: List[EmbeddingRecord] = []
         for command in self.config.commands:
             for subcommand in command.subcommands:
-                section = self.sections.get(subcommand.script_section)
-                if not section:
-                    raise ValueError(
-                        f"Missing Markdown section '{subcommand.script_section}' for {command.name}.{subcommand.name}"
-                    )
-                schema = _serialize_schema(command.name, subcommand, section.description)
+                section_id = f"{command.name}.{subcommand.name}"
+                
+                # Create description from help text and code comments
+                description = subcommand.help
+                if subcommand.prepare_code:
+                    # Extract comments from code as additional context
+                    code_lines = subcommand.prepare_code.split('\n')
+                    comments = [line.strip()[1:].strip() for line in code_lines if line.strip().startswith('#')]
+                    if comments:
+                        description += " " + " ".join(comments)
+                
+                schema = _serialize_schema(command.name, subcommand, description)
                 records.append(
                     EmbeddingRecord(
-                        section_id=section.identifier,
+                        section_id=section_id,
                         command=command.name,
                         subcommand=subcommand.name,
-                        description=section.description,
+                        description=description,
                         schema=schema,
                     )
                 )
@@ -300,7 +189,7 @@ class MCPApplication:
                 logger.error(f"Subcommand '{payload.subcommand}' not found in command '{payload.command}'. Available subcommands: {[sub.name for sub in command.subcommands]}")
                 raise HTTPException(status_code=404, detail="Subcommand not found")
 
-            logger.info(f"Found subcommand definition: {subcommand.script_section}")
+            logger.info(f"Found subcommand definition: {payload.command}.{payload.subcommand}")
             
             handler = _create_handler(runtime, subcommand)
             buffer = io.StringIO()
@@ -321,9 +210,230 @@ class MCPApplication:
                 parsed_output = output
             return {"output": parsed_output}
 
+        @app.post("/generate-code")
+        def generate_code(request: GenerateCodeRequest) -> Dict[str, str]:
+            """Generate prepare and response code using OpenAI."""
+            try:
+                api_key = os.getenv("OPENAI_API_KEY")
+                if not api_key:
+                    raise HTTPException(status_code=400, detail="OpenAI API key not configured")
+                
+                client = openai.OpenAI(api_key=api_key)
+                
+                prompt = f"""
+                Generate EXACTLY two Python functions for a CLI command. Do not include any other code, explanations, imports, main functions, or example usage.
+
+                Requirements:
+                - Command Description: {request.description}
+                - Processing Instructions: {request.processor_prompt}
+                - HTTP Method: {request.method}
+                - URL Template: {request.url}
+
+                STRICT FORMAT REQUIREMENTS:
+                1. Generate ONLY these two functions, nothing else
+                2. No imports, no main function, no example code
+                3. No markdown code blocks or backticks
+                4. No explanatory text before or after the functions
+
+                Function 1: prepare(request, helpers)
+                - Takes a request dict with: method, url, headers, params, json, data
+                - Returns the modified request dict
+                - Available helpers: 
+                  * helpers.secret(name): Get configured secrets
+                  * helpers.env(key, default): Get environment variables
+                  * helpers.json(value): Parse/serialize JSON data
+                  * helpers.dumps(value): Serialize to JSON string
+                  * helpers.loads(value): Parse JSON string
+
+                Function 2: process_response(response, helpers)
+                - Takes the HTTP response (already parsed dict/list for JSON responses, string for text)
+                - Returns processed data for CLI output (dict, list, or string)
+                - Available helpers: 
+                  * helpers.secret(name): Get configured secrets
+                  * helpers.env(key, default): Get environment variables  
+                  * helpers.json(value): Parse/serialize JSON data
+                  * helpers.get(dict, key, default): Safe dict access
+                  * helpers.filter(items, key, value): Filter list of dicts
+                  * helpers.map(items, keys): Extract specific keys from dicts
+
+                Example format (adapt to requirements):
+                def prepare(request, helpers):
+                    return request
+
+                def process_response(response, helpers):
+                    return response
+
+                Generate functions that match the description and processing requirements above.
+                """
+
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "You are a Python code generator. You MUST output ONLY the two requested functions with NO additional code, imports, explanations, or markdown. Follow the format exactly."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=800
+                )
+
+                generated_code = response.choices[0].message.content.strip()
+                
+                # Clean up any markdown artifacts
+                generated_code = generated_code.replace('```python', '').replace('```', '').strip()
+                
+                # Split the code into prepare and response functions
+                code_lines = generated_code.split('\n')
+                prepare_lines = []
+                response_lines = []
+                current_function = None
+                indent_level = 0
+                
+                for line in code_lines:
+                    stripped = line.strip()
+                    
+                    # Skip empty lines outside functions
+                    if not stripped and current_function is None:
+                        continue
+                    
+                    # Skip main function and imports
+                    if (stripped.startswith('def main(') or 
+                        stripped.startswith('if __name__') or
+                        stripped.startswith('import ') or
+                        stripped.startswith('from ')):
+                        current_function = 'skip'
+                        continue
+                    
+                    # Detect function starts
+                    if stripped.startswith('def prepare('):
+                        current_function = 'prepare'
+                        prepare_lines.append(line)
+                        indent_level = len(line) - len(line.lstrip())
+                    elif stripped.startswith('def process_response('):
+                        current_function = 'response'
+                        response_lines.append(line)
+                        indent_level = len(line) - len(line.lstrip())
+                    elif current_function == 'prepare':
+                        # Continue with prepare function
+                        if stripped and (len(line) - len(line.lstrip())) <= indent_level and not line.startswith(' ') and not line.startswith('\t'):
+                            # Function ended, check if it's another function
+                            if not stripped.startswith('def '):
+                                current_function = None
+                        if current_function == 'prepare':
+                            prepare_lines.append(line)
+                    elif current_function == 'response':
+                        # Continue with response function  
+                        if stripped and (len(line) - len(line.lstrip())) <= indent_level and not line.startswith(' ') and not line.startswith('\t'):
+                            # Function ended, check if it's another function
+                            if not stripped.startswith('def '):
+                                current_function = None
+                        if current_function == 'response':
+                            response_lines.append(line)
+                    elif current_function == 'skip':
+                        # Skip until we find a proper function or reach base indentation
+                        if stripped and not line.startswith(' ') and not line.startswith('\t'):
+                            current_function = None
+                
+                prepare_code = '\n'.join(prepare_lines) if prepare_lines else "def prepare(request, helpers):\n    return request"
+                response_code = '\n'.join(response_lines) if response_lines else "def process_response(response, helpers):\n    return response"
+                
+                return {
+                    "prepare_code": prepare_code,
+                    "response_code": response_code
+                }
+                
+            except Exception as e:
+                logging.error(f"Code generation failed: {e}")
+                raise HTTPException(status_code=500, detail=f"Code generation failed: {str(e)}")
+
+        @app.post("/commands")
+        def create_command(request: CreateCommandRequest) -> Dict[str, str]:
+            """Create a new command in the configuration."""
+            try:
+                # Load current config
+                config_data = json.loads(self.config_path.read_text())
+                
+                # Find or create command group
+                command_group = None
+                for cmd in config_data.get("commands", []):
+                    if cmd["name"] == request.command:
+                        command_group = cmd
+                        break
+                
+                if not command_group:
+                    command_group = {
+                        "name": request.command,
+                        "help": f"{request.command} commands",
+                        "subcommands": []
+                    }
+                    config_data.setdefault("commands", []).append(command_group)
+                
+                # Check if subcommand already exists
+                for subcmd in command_group["subcommands"]:
+                    if subcmd["name"] == request.subcommand:
+                        raise HTTPException(status_code=400, detail="Subcommand already exists")
+                
+                # Create new subcommand
+                new_subcommand = {
+                    "name": request.subcommand,
+                    "help": request.help,
+                    "prepare_code": request.prepare_code or "def prepare(request, helpers):\n    return request",
+                    "response_code": request.response_code or "def process_response(response, helpers):\n    return response",
+                    "arguments": [],
+                    "request": {
+                        "method": request.method,
+                        "url": request.url,
+                        "headers": {"Content-Type": "application/json"} if request.method in ["POST", "PUT", "PATCH"] else {},
+                        "query": {},
+                        "body": {"mode": "json", "template": {}},
+                        "response": {"mode": "json", "success_codes": [200]}
+                    }
+                }
+                
+                command_group["subcommands"].append(new_subcommand)
+                
+                # Save config
+                self.config_path.write_text(json.dumps(config_data, indent=2))
+                self._reload_config()
+                
+                return {"status": "created"}
+                
+            except Exception as e:
+                logging.error(f"Command creation failed: {e}")
+                raise HTTPException(status_code=500, detail=f"Command creation failed: {str(e)}")
+
+        @app.delete("/commands")
+        def delete_command(request: DeleteCommandRequest) -> Dict[str, str]:
+            """Delete a command from the configuration."""
+            try:
+                # Load current config
+                config_data = json.loads(self.config_path.read_text())
+                
+                # Find and remove subcommand
+                for cmd in config_data.get("commands", []):
+                    if cmd["name"] == request.command:
+                        cmd["subcommands"] = [
+                            sub for sub in cmd["subcommands"] 
+                            if sub["name"] != request.subcommand
+                        ]
+                        break
+                
+                # Save config
+                self.config_path.write_text(json.dumps(config_data, indent=2))
+                self._reload_config()
+                
+                return {"status": "deleted"}
+                
+            except Exception as e:
+                logging.error(f"Command deletion failed: {e}")
+                raise HTTPException(status_code=500, detail=f"Command deletion failed: {str(e)}")
+
         @app.get("/ui", response_class=HTMLResponse)
         def ui_page() -> HTMLResponse:
-            return HTMLResponse(_UI_HTML)
+            static_path = Path(__file__).parent.parent.parent / "static" / "admin.html"
+            if static_path.exists():
+                return HTMLResponse(static_path.read_text())
+            else:
+                return HTMLResponse("<h1>Admin UI not found</h1><p>Static file missing: admin.html</p>")
 
 
 def _serialize_schema(command_name: str, subcommand, description: str) -> Dict[str, Any]:

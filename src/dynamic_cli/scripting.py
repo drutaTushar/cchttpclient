@@ -38,8 +38,39 @@ class ScriptHelpers:
             return default
         raise SecretNotFoundError(f"Environment variable '{key}' is not set.")
 
-    def json(self, value: Any) -> str:
-        return json.dumps(value)
+    def json(self, value: Any) -> Any:
+        """Parse JSON if string, otherwise return as-is for serialization."""
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                return value
+        elif isinstance(value, (dict, list)):
+            # If it's already parsed, return as-is
+            return value
+        else:
+            # For other types, try to serialize
+            return json.dumps(value)
+    
+    def dumps(self, value: Any) -> str:
+        """Serialize value to JSON string."""
+        return json.dumps(value, indent=2)
+    
+    def loads(self, value: str) -> Any:
+        """Parse JSON string to Python object."""
+        return json.loads(value)
+    
+    def get(self, data: Dict[str, Any], key: str, default: Any = None) -> Any:
+        """Safely get value from dictionary."""
+        return data.get(key, default)
+    
+    def filter(self, items: List[Dict[str, Any]], key: str, value: Any) -> List[Dict[str, Any]]:
+        """Filter list of dictionaries by key-value pair."""
+        return [item for item in items if item.get(key) == value]
+    
+    def map(self, items: List[Dict[str, Any]], keys: List[str]) -> List[Dict[str, Any]]:
+        """Extract only specified keys from list of dictionaries."""
+        return [{k: item.get(k) for k in keys} for item in items]
 
 
 @dataclass
@@ -82,6 +113,15 @@ def load_script(source: str, helpers: ScriptHelpers) -> RequestScript:
             raise ScriptExecutionError(f"Error in process_response(): {exc}") from exc
 
     return RequestScript(prepare=prepared, process_response=processed)
+
+
+def load_script_from_code(prepare_code: str, response_code: str, helpers: ScriptHelpers) -> RequestScript:
+    """Load script from separate prepare and response code strings."""
+    
+    # Combine the code into a single script
+    combined_code = f"{prepare_code}\n\n{response_code}"
+    
+    return load_script(combined_code, helpers)
 
 
 def _resolve_secret(secret: SecretDefinition) -> str:

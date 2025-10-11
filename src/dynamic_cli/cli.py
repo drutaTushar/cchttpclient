@@ -11,8 +11,7 @@ import httpx
 import typer
 
 from .config import ArgumentDefinition, CLIConfig, SubcommandDefinition
-from .markdown_parser import parse_markdown_sections
-from .scripting import RequestScript, ScriptHelpers, load_script
+from .scripting import RequestScript, ScriptHelpers, load_script_from_code
 
 
 TYPE_MAP: Dict[str, Callable[[Any], Any]] = {
@@ -33,18 +32,16 @@ def _annotation_for_type(type_name: str):
 class CommandRuntime:
     def __init__(self, config: CLIConfig):
         self.config = config
-        self.sections = parse_markdown_sections(config.markdown_path)
         self.script_cache: Dict[str, RequestScript] = {}
 
-    def get_script(self, section_id: str) -> RequestScript:
-        if section_id in self.script_cache:
-            return self.script_cache[section_id]
-        section = self.sections.get(section_id)
-        if not section:
-            raise typer.BadParameter(f"Unknown script section '{section_id}'.")
+    def get_script(self, subcommand: SubcommandDefinition) -> RequestScript:
+        cache_key = f"{subcommand.name}_{hash(subcommand.prepare_code + subcommand.response_code)}"
+        if cache_key in self.script_cache:
+            return self.script_cache[cache_key]
+        
         helpers = ScriptHelpers(config=self.config)
-        script = load_script(section.script, helpers)
-        self.script_cache[section_id] = script
+        script = load_script_from_code(subcommand.prepare_code, subcommand.response_code, helpers)
+        self.script_cache[cache_key] = script
         return script
 
 
@@ -122,7 +119,7 @@ def _build_request_payload(subcommand: SubcommandDefinition, values: Dict[str, A
 def _create_handler(runtime: CommandRuntime, subcommand: SubcommandDefinition):
     def handler(**kwargs):
         request_payload = _build_request_payload(subcommand, kwargs)
-        script = runtime.get_script(subcommand.script_section)
+        script = runtime.get_script(subcommand)
         prepared = script.prepare(request_payload)
 
         # If prepare returns None, skip HTTP request (for test commands)

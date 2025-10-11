@@ -1,10 +1,19 @@
 {
-  "markdown_path": "config/commands.md",
   "http_timeout": 30,
   "secrets": {
-    "supabase_api_key": {"type": "env", "env": "SUPABASE_API_KEY"},
-    "supabase_project_id": {"type": "value", "value": "your-project-id"},
-    "s3_default_bucket": {"type": "env", "env": "S3_BUCKET", "encoding": "utf-8"}
+    "supabase_api_key": {
+      "type": "env",
+      "env": "SUPABASE_API_KEY"
+    },
+    "supabase_project_id": {
+      "type": "value",
+      "value": "your-project-id"
+    },
+    "s3_default_bucket": {
+      "type": "env",
+      "env": "S3_BUCKET",
+      "encoding": "utf-8"
+    }
   },
   "commands": [
     {
@@ -14,7 +23,8 @@
         {
           "name": "list",
           "help": "List objects inside a bucket",
-          "script_section": "storage.list",
+          "prepare_code": "def prepare(request, helpers):\n    headers = request.get(\"headers\", {})\n    headers.setdefault(\"Authorization\", f\"Bearer {helpers.secret('supabase_api_key')}\")\n    headers.setdefault(\"X-Project-Id\", helpers.secret(\"supabase_project_id\"))\n    request[\"headers\"] = headers\n    params = request.get(\"params\", {})\n    if not params.get(\"prefix\"):\n        params[\"prefix\"] = helpers.env(\"DEFAULT_STORAGE_PREFIX\", \"\")\n    request[\"params\"] = params\n    return request",
+          "response_code": "def process_response(response, helpers):\n    objects = response.get(\"objects\", []) if isinstance(response, dict) else []\n    return {\n        \"count\": len(objects),\n        \"objects\": objects,\n    }",
           "arguments": [
             {
               "name": "bucket",
@@ -49,7 +59,9 @@
             },
             "response": {
               "mode": "json",
-              "success_codes": [200]
+              "success_codes": [
+                200
+              ]
             }
           }
         }
@@ -62,7 +74,8 @@
         {
           "name": "query",
           "help": "Run an SQL statement",
-          "script_section": "database.query",
+          "prepare_code": "def prepare(request, helpers):\n    headers = request.get(\"headers\", {})\n    headers.setdefault(\"apikey\", helpers.secret(\"supabase_api_key\"))\n    headers.setdefault(\"Authorization\", f\"Bearer {helpers.secret('supabase_api_key')}\")\n    headers.setdefault(\"X-Client-Info\", \"dynamic-cli/1.0\")\n    request[\"headers\"] = headers\n    body = request.get(\"json\", {})\n    body.setdefault(\"project_id\", helpers.secret(\"supabase_project_id\"))\n    body.setdefault(\"role\", helpers.env(\"SUPABASE_ROLE\", \"service_role\"))\n    request[\"json\"] = body\n    return request",
+          "response_code": "def process_response(response, helpers):\n    if isinstance(response, dict) and \"data\" in response:\n        return response[\"data\"]\n    return response",
           "arguments": [
             {
               "name": "sql",
@@ -99,7 +112,10 @@
             },
             "response": {
               "mode": "json",
-              "success_codes": [200, 201]
+              "success_codes": [
+                200,
+                201
+              ]
             }
           }
         }
@@ -112,7 +128,8 @@
         {
           "name": "echo",
           "help": "Echo back the provided message",
-          "script_section": "test.echo",
+          "prepare_code": "def prepare(request, helpers):\n    return None  # Skip HTTP request for test command",
+          "response_code": "def process_response(response, helpers):\n    return {\n        \"echo\": \"Test command executed successfully\",\n        \"timestamp\": helpers.env(\"TEST_TIMESTAMP\", \"now\"),\n        \"status\": \"success\"\n    }",
           "arguments": [
             {
               "name": "message",
@@ -137,7 +154,38 @@
             },
             "response": {
               "mode": "json",
-              "success_codes": [200]
+              "success_codes": [
+                200
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "jp",
+      "help": "jp commands",
+      "subcommands": [
+        {
+          "name": "users",
+          "help": "Load users from jsonplaceholder. Simple placeholder api to load random users",
+          "prepare_code": "def prepare(request, helpers):\n    request['method'] = 'GET'\n    request['url'] = 'https://jsonplaceholder.typicode.com/users'\n    return request\n",
+          "response_code": "def process_response(response, helpers):\n    users = helpers.json(response)\n    formatted_users = [{'name': user['name'], 'email': user['email']} for user in users]\n    return formatted_users",
+          "arguments": [],
+          "request": {
+            "method": "GET",
+            "url": "https://jsonplaceholder.typicode.com/users",
+            "headers": {},
+            "query": {},
+            "body": {
+              "mode": "json",
+              "template": {}
+            },
+            "response": {
+              "mode": "json",
+              "success_codes": [
+                200
+              ]
             }
           }
         }
