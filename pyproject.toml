@@ -11,8 +11,12 @@ dependencies = [
   "fastapi>=0.110",
   "uvicorn>=0.29",
   "numpy>=1.26",
-  "openai>=1.0"
+  "openai>=1.0",
+  "mcp[cli]"
 ]
+
+[project.scripts]
+dynamic-cli = "dynamic_cli.main:main"
 
 [project.optional-dependencies]
 development = [

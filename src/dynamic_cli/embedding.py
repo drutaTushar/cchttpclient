@@ -95,8 +95,12 @@ class HashEmbeddingProvider(EmbeddingProvider):
     def embed(self, texts: Sequence[str]) -> List[np.ndarray]:
         vectors: List[np.ndarray] = []
         for text in texts:
+            # Create a more stable hash-based embedding
             digest = hashlib.sha256(text.encode("utf-8")).digest()
-            floats = np.frombuffer(digest * 4, dtype=np.float32)[:384]
+            # Convert to integers, then normalize to prevent overflow
+            int_values = np.frombuffer(digest[:128], dtype=np.uint8)  # 128 bytes = 128 dimensions
+            # Normalize to [-1, 1] range to prevent overflow
+            floats = (int_values.astype(np.float32) - 127.5) / 127.5
             vectors.append(floats)
         return vectors
 
@@ -220,7 +224,7 @@ class EmbeddingStore:
         query_vector = self.provider.embed([text])[0]
         records = self.all()
         scored = [
-            (record, _cosine_similarity(query_vector, record.embedding or np.array([])))
+            (record, _cosine_similarity(query_vector, record.embedding if record.embedding is not None else np.array([])))
             for record in records
         ]
         ranked = sorted(scored, key=lambda item: item[1], reverse=True)

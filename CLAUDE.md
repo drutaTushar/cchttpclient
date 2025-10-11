@@ -5,13 +5,64 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ### Running the CLI
+
+**Path-Independent Installation Options:**
+
+**Option 1: Global install (Recommended)**
 ```bash
-python -m dynamic_cli.cli --config config/cli_config.json <command> <subcommand> [options]
+# Install globally with uv
+uv tool install .
+
+# Then use from anywhere
+dynamic-cli jp users
+dynamic-cli storage list my-bucket --prefix data/
 ```
 
-### Starting the MCP Server
+**Option 2: Shell wrapper script**
+```bash
+# Add project bin to PATH
+export PATH="/path/to/dynamic-cli/bin:$PATH"
+
+# Then use from anywhere
+dynamic-cli jp users
+```
+
+**Option 3: Smart alias (changes to project directory)**
+```bash
+# Add to your shell profile (.bashrc, .zshrc, etc.)
+alias dynamic-cli='(cd /path/to/dynamic-cli && uv run -m dynamic_cli.cli --config config/cli_config.json)'
+
+# Use from anywhere - automatically changes to project directory
+dynamic-cli jp users
+```
+
+**Option 4: Direct command (development)**
+```bash
+# From project directory only
+uv run -m dynamic_cli.cli --config config/cli_config.json jp users
+```
+
+**Config file resolution:**
+The CLI automatically looks for config files in this order:
+1. `./cli_config.json` (current directory)
+2. `./config/cli_config.json` (current directory)
+3. `~/.config/dynamic-cli/config.json` (user config)
+4. `~/.dynamic-cli/config.json` (user config)
+5. `$DYNAMIC_CLI_CONFIG` (environment variable)
+6. `/etc/dynamic-cli/config.json` (system-wide)
+
+### Starting the MCP Server (Admin UI)
 ```bash
 python -m dynamic_cli.mcp_server --config config/cli_config.json --host 0.0.0.0 --port 8765
+```
+
+### Starting the Proper MCP Server (for LLM integration)
+```bash
+# Network transport (default: localhost:8000)
+uv run -m dynamic_cli.mcp_server_proper --config config/cli_config.json
+
+# Custom host and port
+uv run -m dynamic_cli.mcp_server_proper --config config/cli_config.json --host 0.0.0.0 --port 8001
 ```
 
 ### Code Quality
@@ -69,13 +120,27 @@ Inline scripts have access to a `helpers` object providing:
 - `helpers.env(name, default=None)`: Environment variable access
 - `helpers.json(value)`: JSON serialization helper
 
-### MCP Integration and Admin UI
+### MCP Integration
 
-The MCP server provides:
-- **Semantic search** over command descriptions using OpenAI embeddings
-- **Admin web interface** at `/ui` for command management
-- **AI code generation** using OpenAI GPT-4o to generate prepare/response functions
-- **Command CRUD operations** via REST API
+The project provides two MCP server implementations:
+
+1. **Admin UI Server** (`mcp_server.py`): FastAPI-based web interface for command management
+   - **Admin web interface** at `/ui` for command management  
+   - **AI code generation** using OpenAI GPT-4o to generate prepare/response functions
+   - **Command CRUD operations** via REST API
+
+2. **Proper MCP Server** (`mcp_server_proper.py`): Standard MCP protocol implementation
+   - **Semantic command search tool** for LLMs to find relevant CLI commands
+   - **Network transport (SSE)** for easy debugging and connection
+   - **Compatible with MCP Inspector** and other MCP clients
+   - **Returns CLI command templates** with argument examples
+
+### LLM Integration Flow
+
+1. LLM receives user query (e.g., "list storage objects")
+2. LLM calls `semantic_command_search` tool with the query
+3. MCP server returns matching commands with CLI syntax
+4. LLM can execute the suggested CLI command using bash
 
 For offline development, set `DYNAMIC_CLI_USE_HASH_EMBEDDINGS=1` to use deterministic hash-based embeddings instead of OpenAI.
 

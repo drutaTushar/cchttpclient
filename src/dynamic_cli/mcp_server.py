@@ -67,6 +67,27 @@ class DeleteCommandRequest(BaseModel):
     subcommand: str
 
 
+# MCP Protocol Models
+class MCPRequest(BaseModel):
+    jsonrpc: str = "2.0"
+    id: int | str | None = None
+    method: str
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MCPResponse(BaseModel):
+    jsonrpc: str = "2.0"
+    id: int | str | None = None
+    result: Dict[str, Any] | None = None
+    error: Dict[str, Any] | None = None
+
+
+class MCPTool(BaseModel):
+    name: str
+    description: str
+    inputSchema: Dict[str, Any]
+
+
 
 
 class MCPApplication:
