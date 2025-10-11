@@ -1,0 +1,27 @@
+[project]
+name = "dynamic-cli"
+version = "0.1.0"
+description = "Config-driven HTTP CLI and MCP server"
+authors = [{ name = "Example", email = "example@example.com" }]
+requires-python = ">=3.11"
+dependencies = [
+  "typer>=0.9",
+  "httpx>=0.27",
+  "pyyaml>=6.0",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "sentence-transformers>=2.2",
+  "numpy>=1.26"
+]
+
+[project.optional-dependencies]
+development = [
+  "black",
+  "isort",
+  "mypy",
+  "pytest"
+]
+
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
