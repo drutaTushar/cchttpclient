@@ -29,6 +29,7 @@ def process_response(response, helpers):
         "objects": objects,
     }
 ```
+
 ---
 id: database.query
 command: database
@@ -57,3 +58,27 @@ def process_response(response, helpers):
         return response["data"]
     return response
 ```
+---
+id: test.echo
+command: test
+subcommand: echo
+---
+Simple echo command that returns the message back without making external HTTP calls.
+This is useful for testing the CLI and MCP server functionality.
+
+```python
+def prepare(request, helpers):
+    # Skip the HTTP request entirely for this test command
+    # Just return a mock response structure
+    return None  # Signal to skip HTTP call
+
+def process_response(response, helpers):
+    # Since we skipped the HTTP call, create our own response
+    # The message should be available in the request context
+    return {
+        "echo": "Test command executed successfully",
+        "timestamp": helpers.env("TEST_TIMESTAMP", "now"),
+        "status": "success"
+    }
+```
+---

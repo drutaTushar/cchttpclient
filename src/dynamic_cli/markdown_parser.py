@@ -32,34 +32,39 @@ def parse_markdown_sections(path: Path) -> Dict[str, MarkdownSection]:
     """Parse the Markdown file into sections keyed by identifier."""
 
     text = Path(path).read_text(encoding="utf-8")
-    lines = text.splitlines()
-    index = 0
     sections: Dict[str, MarkdownSection] = {}
-
-    while index < len(lines):
-        # Seek to the next section start
-        while index < len(lines) and lines[index].strip() != "---":
-            index += 1
-        if index >= len(lines):
-            break
-        index += 1  # skip '---'
-
-        yaml_lines: List[str] = []
-        while index < len(lines) and lines[index].strip() != "---":
-            yaml_lines.append(lines[index])
-            index += 1
-        if index >= len(lines):
-            raise MarkdownParserError("Missing content delimiter '---' after YAML metadata.")
-        index += 1  # skip '---' between metadata and body
-
-        body_lines: List[str] = []
-        while index < len(lines) and lines[index].strip() != "---":
-            body_lines.append(lines[index])
-            index += 1
-
+    
+    # Split by section delimiters (lines with just ---)
+    raw_sections = []
+    current_section = []
+    
+    for line in text.splitlines():
+        if line.strip() == "---":
+            if current_section:
+                raw_sections.append(current_section)
+                current_section = []
+        else:
+            current_section.append(line)
+    
+    # Add final section if exists
+    if current_section:
+        raw_sections.append(current_section)
+    
+    # Process sections in pairs (metadata, content)
+    for i in range(0, len(raw_sections), 2):
+        if i + 1 >= len(raw_sections):
+            break  # Need both metadata and content
+            
+        yaml_lines = raw_sections[i]
+        body_lines = raw_sections[i + 1]
+        
         raw_yaml = "\n".join(yaml_lines)
         body = "\n".join(body_lines)
-        meta = yaml.safe_load(raw_yaml) or {}
+        
+        try:
+            meta = yaml.safe_load(raw_yaml) or {}
+        except yaml.YAMLError as e:
+            raise MarkdownParserError(f"Invalid YAML metadata: {e}")
 
         identifier = meta.get("id")
         command = meta.get("command")
@@ -81,9 +86,5 @@ def parse_markdown_sections(path: Path) -> Dict[str, MarkdownSection]:
             script=script,
             metadata=meta,
         )
-
-        # Skip trailing separator if present
-        if index < len(lines) and lines[index].strip() == "---":
-            index += 1
 
     return sections

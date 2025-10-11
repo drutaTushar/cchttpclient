@@ -104,6 +104,44 @@
           }
         }
       ]
+    },
+    {
+      "name": "test",
+      "help": "Simple test commands",
+      "subcommands": [
+        {
+          "name": "echo",
+          "help": "Echo back the provided message",
+          "script_section": "test.echo",
+          "arguments": [
+            {
+              "name": "message",
+              "help": "Message to echo back",
+              "param_type": "argument",
+              "type": "str",
+              "required": true,
+              "location": "json",
+              "target": "message"
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "http://httpbin.org/post",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "query": {},
+            "body": {
+              "mode": "json",
+              "template": {}
+            },
+            "response": {
+              "mode": "json",
+              "success_codes": [200]
+            }
+          }
+        }
+      ]
     }
   ],
   "mcp": {

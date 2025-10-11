@@ -125,24 +125,28 @@ def _create_handler(runtime: CommandRuntime, subcommand: SubcommandDefinition):
         script = runtime.get_script(subcommand.script_section)
         prepared = script.prepare(request_payload)
 
-        timeout = prepared.get("timeout") or request_payload.get("timeout") or runtime.config.http_timeout
-        request_args = {
-            "method": prepared.get("method", request_payload.get("method")),
-            "url": prepared.get("url", request_payload.get("url")),
-            "headers": prepared.get("headers", request_payload.get("headers")),
-            "params": prepared.get("params", request_payload.get("params")),
-            "json": prepared.get("json", request_payload.get("json")),
-            "data": prepared.get("data", request_payload.get("data")),
-        }
-
-        with httpx.Client(timeout=timeout) as client:
-            response = client.request(**request_args)
-        response.raise_for_status()
-
-        if subcommand.request.response.mode == "json":
-            result_data = response.json()
+        # If prepare returns None, skip HTTP request (for test commands)
+        if prepared is None:
+            result_data = None
         else:
-            result_data = response.text
+            timeout = prepared.get("timeout") or request_payload.get("timeout") or runtime.config.http_timeout
+            request_args = {
+                "method": prepared.get("method", request_payload.get("method")),
+                "url": prepared.get("url", request_payload.get("url")),
+                "headers": prepared.get("headers", request_payload.get("headers")),
+                "params": prepared.get("params", request_payload.get("params")),
+                "json": prepared.get("json", request_payload.get("json")),
+                "data": prepared.get("data", request_payload.get("data")),
+            }
+
+            with httpx.Client(timeout=timeout) as client:
+                response = client.request(**request_args)
+            response.raise_for_status()
+
+            if subcommand.request.response.mode == "json":
+                result_data = response.json()
+            else:
+                result_data = response.text
 
         processed = script.process_response(result_data)
         typer.echo(json.dumps(processed, indent=2) if isinstance(processed, (dict, list)) else processed)

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 import typer
@@ -30,198 +30,17 @@ class CommandResponse(BaseModel):
     section_id: str
     description: str
     score: float
-    schema: Dict[str, Any]
+    request_schema: Dict[str, Any] = Field(alias="schema")
 
 
 class QueryResponse(BaseModel):
     results: List[CommandResponse]
 
 
-class MCPApplication:
-    def __init__(self, config_path: Path):
-        self.config_path = Path(config_path)
-        self._load_config()
-        self.store = EmbeddingStore.from_settings(self.config.mcp)
-        self._build_index()
-        self.app = FastAPI(title="Dynamic CLI MCP Server")
-        self._register_routes()
-
-    def _load_config(self) -> None:
-        self.config = CLIConfig.load(self.config_path)
-        self.sections = parse_markdown_sections(self.config.markdown_path)
-
-    def _reload_config(self) -> None:
-        previous_store = getattr(self, "store", None)
-        self._load_config()
-        previous_path = getattr(previous_store, "path", None)
-        if previous_path is None or previous_path != self.config.mcp.persist_path:
-            self.store = EmbeddingStore.from_settings(self.config.mcp)
-        self._build_index()
-
-    def _build_index(self):
-        records: List[EmbeddingRecord] = []
-        for command in self.config.commands:
-            for subcommand in command.subcommands:
-                section = self.sections.get(subcommand.script_section)
-                if not section:
-                    raise ValueError(
-                        f"Missing Markdown section '{subcommand.script_section}' for {command.name}.{subcommand.name}"
-                    )
-                schema = _serialize_schema(command.name, subcommand, section.description)
-                records.append(
-                    EmbeddingRecord(
-                        section_id=section.identifier,
-                        command=command.name,
-                        subcommand=subcommand.name,
-                        description=section.description,
-                        schema=schema,
-                    )
-                )
-        self.store.rebuild(records)
-
-    def _register_routes(self):
-        app = self.app
-
-        @app.get("/commands")
-        def list_commands() -> QueryResponse:
-            records = self.store.all()
-            results = [
-                CommandResponse(
-                    command=record.command,
-                    subcommand=record.subcommand,
-                    section_id=record.section_id,
-                    description=record.description,
-                    score=0.0,
-                    schema=record.schema,
-                )
-                for record in records
-            ]
-            return QueryResponse(results=results)
-
-        @app.post("/query")
-        def query_endpoint(request: QueryRequest) -> QueryResponse:
-            if not request.query.strip():
-                raise HTTPException(status_code=400, detail="Query must not be empty")
-            matches = self.store.query(request.query, top_k=request.top_k or self.config.mcp.top_k)
-            results = [
-                CommandResponse(
-                    command=record.command,
-                    subcommand=record.subcommand,
-                    section_id=record.section_id,
-                    description=record.description,
-                    score=score,
-                    schema=record.schema,
-                )
-                for record, score in matches
-            ]
-            return QueryResponse(results=results)
-
-        @app.get("/config")
-        def read_config() -> Dict[str, Any]:
-            return {"content": self.config_path.read_text(encoding="utf-8")}
-
-        class ConfigUpdateRequest(BaseModel):
-            content: str
-
-        @app.put("/config")
-        def update_config(payload: ConfigUpdateRequest) -> Dict[str, Any]:
-            try:
-                parsed = json.loads(payload.content)
-            except json.JSONDecodeError as exc:  # pragma: no cover - validated in UI usage
-                raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}") from exc
-
-            self.config_path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
-            self._reload_config()
-            return {"status": "ok"}
-
-        class TestCommandRequest(BaseModel):
-            command: str
-            subcommand: str
-            arguments: Dict[str, Any] = Field(default_factory=dict)
-
-        @app.post("/test-command")
-        def test_command(payload: TestCommandRequest) -> Dict[str, Any]:
-            runtime = CommandRuntime(self.config)
-            command = next((cmd for cmd in self.config.commands if cmd.name == payload.command), None)
-            if not command:
-                raise HTTPException(status_code=404, detail="Command not found")
-            subcommand = next((sub for sub in command.subcommands if sub.name == payload.subcommand), None)
-            if not subcommand:
-                raise HTTPException(status_code=404, detail="Subcommand not found")
-
-            handler = _create_handler(runtime, subcommand)
-            buffer = io.StringIO()
-            try:
-                with contextlib.redirect_stdout(buffer):
-                    handler(**payload.arguments)
-            except Exception as exc:  # pragma: no cover - runtime errors surfaced to client
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-            output = buffer.getvalue().strip()
-            try:
-                parsed_output = json.loads(output)
-            except json.JSONDecodeError:
-                parsed_output = output
-            return {"output": parsed_output}
-
-        @app.get("/ui", response_class=HTMLResponse)
-        def ui_page() -> HTMLResponse:
-            return HTMLResponse(_UI_HTML)
-
-
-def _serialize_schema(command_name: str, subcommand, description: str) -> Dict[str, Any]:
-    return {
-        "command": command_name,
-        "subcommand": subcommand.name,
-        "description": description or subcommand.help,
-        "arguments": [
-            {
-                "name": arg.name,
-                "help": arg.help,
-                "type": arg.type,
-                "required": arg.required,
-                "location": arg.location,
-                "target": arg.target,
-            }
-            for arg in subcommand.arguments
-        ],
-        "request": {
-            "method": subcommand.request.method,
-            "url": subcommand.request.url,
-            "headers": subcommand.request.headers,
-            "query": subcommand.request.query,
-            "body": {
-                "mode": subcommand.request.body.mode,
-                "template": subcommand.request.body.template,
-            },
-            "response": {
-                "mode": subcommand.request.response.mode,
-                "success_codes": subcommand.request.response.success_codes,
-            },
-        },
-    }
-
-def create_app(config_path: Path) -> FastAPI:
-    return MCPApplication(config_path).app
-
-
-cli = typer.Typer(help="Dynamic CLI MCP server")
-
-
-@cli.command()
-def serve(
-    config: Path = typer.Option(..., "--config", help="Path to CLI configuration"),
-    host: str = typer.Option("127.0.0.1", help="Host to bind"),
-    port: int = typer.Option(8765, help="Port to bind"),
-):
-    """Run the MCP server."""
-
-    app = create_app(config)
-    uvicorn.run(app, host=str(host), port=int(port))
-
-
-if __name__ == "__main__":
-    cli()
+class TestCommandRequest(BaseModel):
+    command: str
+    subcommand: str
+    arguments: Dict[str, Any] = Field(default_factory=dict)
 
 
 _UI_HTML = """
@@ -364,3 +183,200 @@ _UI_HTML = """
   </body>
 </html>
 """
+
+
+class MCPApplication:
+    def __init__(self, config_path: Path):
+        self.config_path = Path(config_path)
+        self._load_config()
+        self.store = EmbeddingStore.from_settings(self.config.mcp)
+        self._build_index()
+        self.app = FastAPI(title="Dynamic CLI MCP Server")
+        self._register_routes()
+
+    def _load_config(self) -> None:
+        self.config = CLIConfig.load(self.config_path)
+        self.sections = parse_markdown_sections(self.config.markdown_path)
+
+    def _reload_config(self) -> None:
+        previous_store = getattr(self, "store", None)
+        self._load_config()
+        previous_path = getattr(previous_store, "path", None)
+        if previous_path is None or previous_path != self.config.mcp.persist_path:
+            self.store = EmbeddingStore.from_settings(self.config.mcp)
+        self._build_index()
+
+    def _build_index(self):
+        records: List[EmbeddingRecord] = []
+        for command in self.config.commands:
+            for subcommand in command.subcommands:
+                section = self.sections.get(subcommand.script_section)
+                if not section:
+                    raise ValueError(
+                        f"Missing Markdown section '{subcommand.script_section}' for {command.name}.{subcommand.name}"
+                    )
+                schema = _serialize_schema(command.name, subcommand, section.description)
+                records.append(
+                    EmbeddingRecord(
+                        section_id=section.identifier,
+                        command=command.name,
+                        subcommand=subcommand.name,
+                        description=section.description,
+                        schema=schema,
+                    )
+                )
+        self.store.rebuild(records)
+
+    def _register_routes(self):
+        app = self.app
+
+        @app.get("/commands")
+        def list_commands() -> QueryResponse:
+            records = self.store.all()
+            results = [
+                CommandResponse(
+                    command=record.command,
+                    subcommand=record.subcommand,
+                    section_id=record.section_id,
+                    description=record.description,
+                    score=0.0,
+                    schema=record.schema,
+                )
+                for record in records
+            ]
+            return QueryResponse(results=results)
+
+        @app.post("/query")
+        def query_endpoint(request: QueryRequest) -> QueryResponse:
+            if not request.query.strip():
+                raise HTTPException(status_code=400, detail="Query must not be empty")
+            matches = self.store.query(request.query, top_k=request.top_k or self.config.mcp.top_k)
+            results = [
+                CommandResponse(
+                    command=record.command,
+                    subcommand=record.subcommand,
+                    section_id=record.section_id,
+                    description=record.description,
+                    score=score,
+                    schema=record.schema,
+                )
+                for record, score in matches
+            ]
+            return QueryResponse(results=results)
+
+        @app.get("/config")
+        def read_config() -> Dict[str, Any]:
+            return {"content": self.config_path.read_text(encoding="utf-8")}
+
+        class ConfigUpdateRequest(BaseModel):
+            content: str
+
+        @app.put("/config")
+        def update_config(payload: ConfigUpdateRequest) -> Dict[str, Any]:
+            try:
+                parsed = json.loads(payload.content)
+            except json.JSONDecodeError as exc:  # pragma: no cover - validated in UI usage
+                raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}") from exc
+
+            self.config_path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+            self._reload_config()
+            return {"status": "ok"}
+
+        @app.post("/test-command")
+        def test_command(payload: TestCommandRequest = Body(...)) -> Dict[str, Any]:
+            import logging
+            logging.basicConfig(level=logging.INFO)
+            logger = logging.getLogger(__name__)
+            
+            logger.info(f"Test command request: command={payload.command}, subcommand={payload.subcommand}, args={payload.arguments}")
+            
+            runtime = CommandRuntime(self.config)
+            command = next((cmd for cmd in self.config.commands if cmd.name == payload.command), None)
+            if not command:
+                logger.error(f"Command '{payload.command}' not found. Available commands: {[cmd.name for cmd in self.config.commands]}")
+                raise HTTPException(status_code=404, detail="Command not found")
+            subcommand = next((sub for sub in command.subcommands if sub.name == payload.subcommand), None)
+            if not subcommand:
+                logger.error(f"Subcommand '{payload.subcommand}' not found in command '{payload.command}'. Available subcommands: {[sub.name for sub in command.subcommands]}")
+                raise HTTPException(status_code=404, detail="Subcommand not found")
+
+            logger.info(f"Found subcommand definition: {subcommand.script_section}")
+            
+            handler = _create_handler(runtime, subcommand)
+            buffer = io.StringIO()
+            try:
+                logger.info(f"Executing handler with arguments: {payload.arguments}")
+                with contextlib.redirect_stdout(buffer):
+                    handler(**payload.arguments)
+                logger.info("Handler executed successfully")
+            except Exception as exc:  # pragma: no cover - runtime errors surfaced to client
+                logger.error(f"Handler execution failed: {exc}")
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            output = buffer.getvalue().strip()
+            logger.info(f"Handler output: {output}")
+            try:
+                parsed_output = json.loads(output)
+            except json.JSONDecodeError:
+                parsed_output = output
+            return {"output": parsed_output}
+
+        @app.get("/ui", response_class=HTMLResponse)
+        def ui_page() -> HTMLResponse:
+            return HTMLResponse(_UI_HTML)
+
+
+def _serialize_schema(command_name: str, subcommand, description: str) -> Dict[str, Any]:
+    return {
+        "command": command_name,
+        "subcommand": subcommand.name,
+        "description": description or subcommand.help,
+        "arguments": [
+            {
+                "name": arg.name,
+                "help": arg.help,
+                "type": arg.type,
+                "required": arg.required,
+                "location": arg.location,
+                "target": arg.target,
+            }
+            for arg in subcommand.arguments
+        ],
+        "request": {
+            "method": subcommand.request.method,
+            "url": subcommand.request.url,
+            "headers": subcommand.request.headers,
+            "query": subcommand.request.query,
+            "body": {
+                "mode": subcommand.request.body.mode,
+                "template": subcommand.request.body.template,
+            },
+            "response": {
+                "mode": subcommand.request.response.mode,
+                "success_codes": subcommand.request.response.success_codes,
+            },
+        },
+    }
+
+def create_app(config_path: Path) -> FastAPI:
+    return MCPApplication(config_path).app
+
+
+cli = typer.Typer(help="Dynamic CLI MCP server")
+
+
+@cli.command()
+def serve(
+    config: Path = typer.Option(..., "--config", help="Path to CLI configuration"),
+    host: str = typer.Option("127.0.0.1", help="Host to bind"),
+    port: int = typer.Option(8765, help="Port to bind"),
+):
+    """Run the MCP server."""
+
+    app = create_app(config)
+    uvicorn.run(app, host=str(host), port=int(port))
+
+
+if __name__ == "__main__":
+    cli()
+
