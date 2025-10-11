@@ -107,8 +107,10 @@
     }
   ],
   "mcp": {
-    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "embedding_model": "text-embedding-3-small",
     "persist_path": "data/mcp_embeddings.sqlite",
+    "api_key_env": "OPENAI_API_KEY",
+    "api_base": null,
     "collection_name": "command_descriptions",
     "top_k": 3
   }

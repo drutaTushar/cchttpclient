@@ -78,6 +78,8 @@ class CommandDefinition:
 class MCPSettings:
     embedding_model: str
     persist_path: Path
+    api_key_env: str = "OPENAI_API_KEY"
+    api_base: Optional[str] = None
     collection_name: str = "command_descriptions"
     top_k: int = 3
 
@@ -142,6 +144,8 @@ class CLIConfig:
         mcp_settings = MCPSettings(
             embedding_model=mcp_data["embedding_model"],
             persist_path=Path(mcp_data["persist_path"]).expanduser(),
+            api_key_env=mcp_data.get("api_key_env", "OPENAI_API_KEY"),
+            api_base=mcp_data.get("api_base"),
             collection_name=mcp_data.get("collection_name", "command_descriptions"),
             top_k=mcp_data.get("top_k", 3),
         )

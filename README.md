@@ -14,7 +14,7 @@ config/
 src/dynamic_cli/
   cli.py            # Dynamic Typer-based CLI entry point
   config.py         # Typed configuration loader
-  embedding.py      # SQLite-backed embedding store
+  embedding.py      # SQLite-backed embedding store with OpenAI vectors
   markdown_parser.py# Markdown section parser
   mcp_server.py     # FastAPI MCP server
   scripting.py      # Script execution helpers exposed to Markdown sections
@@ -34,9 +34,10 @@ important keys are:
     argument metadata plus a base HTTP request description.
 - `secrets`: named secret descriptors. Supported types include `env`, `value`,
   `file`, and `command`. Scripts can request these via `helpers.secret(name)`.
-- `mcp`: configuration for the MCP server embedding store. The current
-  implementation uses the SentenceTransformers model configured by
-  `embedding_model` and stores vectors inside `persist_path`.
+- `mcp`: configuration for the MCP server embedding store. Provide the
+  `embedding_model` (e.g. `text-embedding-3-small`), `persist_path` for the
+  SQLite cache, and `api_key_env`/`api_base` values that identify how to call
+  the OpenAI embeddings API.
 - `http_timeout`: optional global timeout applied to outbound HTTP requests.
 
 ### Argument definitions
@@ -111,9 +112,19 @@ Key endpoints:
   returns ranked matches, allowing an LLM to pick the most suitable command and
   assemble a valid request payload.
 
-Embeddings are generated via [SentenceTransformers](https://www.sbert.net/) and
-persisted in an on-disk SQLite database, so the server can operate entirely
-offline once the model has been downloaded.
+Embeddings are generated through the OpenAI embeddings REST API and cached in a
+local SQLite database. When command descriptions or schemas change, only the
+affected sections trigger a new API call. Set the environment variable named by
+`mcp.api_key_env` (defaults to `OPENAI_API_KEY`). For offline development or
+tests, define `DYNAMIC_CLI_USE_HASH_EMBEDDINGS=1` to switch to a deterministic
+hash-based embedding generator.
+
+### Administrative UI
+
+Navigate to `GET /ui` to open a lightweight HTML control panel. It lists
+commands, lets you edit and persist the shared configuration JSON, and provides
+a small harness for running a command/subcommand pair against the configured
+scripts to validate request enrichment behaviour without leaving the browser.
 
 ## Recommended stack
 
@@ -129,9 +140,9 @@ offline once the model has been downloaded.
 - **MCP server**: [FastAPI](https://fastapi.tiangolo.com/) with
   [Uvicorn](https://www.uvicorn.org/) for hosting, exposing the command
   retrieval tool over simple REST endpoints.
-- **Vector store**: custom SQLite-backed store powered by
-  [sentence-transformers](https://github.com/UKPLab/sentence-transformers) for
-  embeddings and cosine similarity search in embedded environments.
+- **Vector store**: custom SQLite-backed store populated through the
+  [OpenAI embeddings API](https://platform.openai.com/docs/guides/embeddings)
+  with optional deterministic hashing for offline testing.
 
 These choices keep the stack Python-centric, easy to deploy, and friendly to
 embedded/offline scenarios.

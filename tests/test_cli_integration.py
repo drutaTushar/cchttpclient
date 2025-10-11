@@ -288,8 +288,10 @@ def _write_test_files(tmp_path: Path, server_port: int) -> Path:
             }
         ],
         "mcp": {
-            "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+            "embedding_model": "text-embedding-3-small",
             "persist_path": str(tmp_path / "embeddings.db"),
+            "api_key_env": "OPENAI_API_KEY",
+            "api_base": None,
             "collection_name": "test",
             "top_k": 1,
         },
