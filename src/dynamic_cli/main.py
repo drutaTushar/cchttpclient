@@ -16,18 +16,22 @@ def find_config_file() -> Optional[Path]:
     
     # List of possible config locations (in order of preference)
     possible_paths = [
+        # Project-specific config (highest priority)
+        Path.cwd() / ".dynamic-cli" / "config.json",
+        Path.cwd() / ".dynamic-cli" / "cli_config.json",
+        
         # Current working directory
         Path.cwd() / "cli_config.json",
         Path.cwd() / "config" / "cli_config.json",
         
-        # User home directory
-        Path.home() / ".config" / "dynamic-cli" / "config.json",
-        Path.home() / ".dynamic-cli" / "config.json",
-        
         # Environment variable
         Path(os.getenv("DYNAMIC_CLI_CONFIG", "")) if os.getenv("DYNAMIC_CLI_CONFIG") else None,
         
-        # System-wide config
+        # User home directory (fallback)
+        Path.home() / ".config" / "dynamic-cli" / "config.json",
+        Path.home() / ".dynamic-cli" / "config.json",
+        
+        # System-wide config (last resort)
         Path("/etc/dynamic-cli/config.json"),
     ]
     
@@ -53,6 +57,7 @@ def main():
     if not config_path:
         typer.echo(
             "❌ No config file found. Please either:\n"
+            "  • Create .dynamic-cli/config.json in current directory (project-specific)\n"
             "  • Create cli_config.json in current directory\n"
             "  • Create config/cli_config.json in current directory\n"
             "  • Set DYNAMIC_CLI_CONFIG environment variable\n"

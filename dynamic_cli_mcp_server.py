@@ -5,7 +5,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import mcp.types as types
 from mcp.server import NotificationOptions, Server
@@ -313,20 +313,65 @@ app = Starlette(
     ],
 )
 
+def find_config_file() -> Optional[Path]:
+    """Find the config file in various standard locations."""
+    import os
+    
+    # List of possible config locations (in order of preference)
+    possible_paths = [
+        # Project-specific config (highest priority)
+        Path.cwd() / ".dynamic-cli" / "config.json",
+        Path.cwd() / ".dynamic-cli" / "cli_config.json",
+        
+        # Current working directory
+        Path.cwd() / "cli_config.json",
+        Path.cwd() / "config" / "cli_config.json",
+        
+        # Environment variable
+        Path(os.getenv("DYNAMIC_CLI_CONFIG", "")) if os.getenv("DYNAMIC_CLI_CONFIG") else None,
+        
+        # User home directory (fallback)
+        Path.home() / ".config" / "dynamic-cli" / "config.json",
+        Path.home() / ".dynamic-cli" / "config.json",
+        
+        # System-wide config (last resort)
+        Path("/etc/dynamic-cli/config.json"),
+    ]
+    
+    for config_path in possible_paths:
+        if config_path and config_path.exists():
+            return config_path
+    
+    return None
+
 def main():
     """Main entry point."""
     import argparse
     
     parser = argparse.ArgumentParser(description="Dynamic CLI MCP Server")
-    parser.add_argument("--config", type=Path, required=True, help="Path to CLI configuration")
+    parser.add_argument("--config", type=Path, help="Path to CLI configuration (auto-detected if not specified)")
     parser.add_argument("--host", default="localhost", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8001, help="Port to bind to")
     
     args = parser.parse_args()
     
+    # Auto-detect config if not provided
+    config_path = args.config
+    if not config_path:
+        config_path = find_config_file()
+        if not config_path:
+            logger.error(
+                "❌ No config file found. Please either:\n"
+                "  • Create .dynamic-cli/config.json in current directory (project-specific)\n"
+                "  • Create cli_config.json in current directory\n"
+                "  • Use --config option to specify path explicitly"
+            )
+            return 1
+        logger.info(f"📁 Auto-detected config: {config_path}")
+    
     try:
         # Initialize server
-        initialize_server(args.config)
+        initialize_server(config_path)
         
         # Run the server
         logger.info(f"Starting Dynamic CLI MCP server on {args.host}:{args.port}")

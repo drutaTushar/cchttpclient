@@ -1,0 +1,102 @@
+#!/bin/bash
+# Dynamic CLI project initialization script
+
+set -e
+
+PROJECT_DIR="${1:-.}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+TEMPLATE_CONFIG="$PROJECT_ROOT/config/cli_config.json"
+
+echo "🚀 Initializing dynamic-cli project in: $PROJECT_DIR"
+
+# Create project directory if it doesn't exist
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "📁 Creating project directory: $PROJECT_DIR"
+    mkdir -p "$PROJECT_DIR"
+fi
+
+cd "$PROJECT_DIR"
+
+# Create .dynamic-cli directory
+if [ ! -d ".dynamic-cli" ]; then
+    echo "📁 Creating .dynamic-cli directory"
+    mkdir .dynamic-cli
+else
+    echo "⚠️  .dynamic-cli directory already exists"
+fi
+
+# Copy template config if it doesn't exist
+if [ ! -f ".dynamic-cli/config.json" ]; then
+    if [ -f "$TEMPLATE_CONFIG" ]; then
+        echo "📄 Copying template config"
+        cp "$TEMPLATE_CONFIG" .dynamic-cli/config.json
+        echo "✅ Created .dynamic-cli/config.json"
+    else
+        echo "📄 Creating basic config template"
+        cat > .dynamic-cli/config.json << 'EOF'
+{
+  "http_timeout": 30,
+  "secrets": {},
+  "commands": [
+    {
+      "name": "example",
+      "help": "Example commands for this project",
+      "subcommands": [
+        {
+          "name": "hello",
+          "help": "Say hello",
+          "prepare_code": "def prepare(request, helpers):\n    return None  # Skip HTTP request",
+          "response_code": "def process_response(response, helpers):\n    return {\"message\": \"Hello from your project!\"}",
+          "arguments": [],
+          "request": {
+            "method": "GET",
+            "url": "https://httpbin.org/get",
+            "headers": {},
+            "query": {},
+            "body": {"mode": "json", "template": {}},
+            "response": {"mode": "json", "success_codes": [200]}
+          }
+        }
+      ]
+    }
+  ],
+  "mcp": {
+    "embedding_model": "text-embedding-3-small",
+    "persist_path": ".dynamic-cli/embeddings.sqlite",
+    "api_key_env": "OPENAI_API_KEY",
+    "api_base": null,
+    "collection_name": "command_descriptions",
+    "top_k": 3
+  }
+}
+EOF
+        echo "✅ Created basic .dynamic-cli/config.json"
+    fi
+else
+    echo "⚠️  .dynamic-cli/config.json already exists"
+fi
+
+# Add to gitignore
+if [ -f ".gitignore" ]; then
+    if ! grep -q ".dynamic-cli/embeddings.sqlite" .gitignore; then
+        echo "" >> .gitignore
+        echo "# Dynamic CLI" >> .gitignore
+        echo ".dynamic-cli/embeddings.sqlite" >> .gitignore
+        echo "✅ Added .dynamic-cli/embeddings.sqlite to .gitignore"
+    fi
+else
+    echo "# Dynamic CLI" > .gitignore
+    echo ".dynamic-cli/embeddings.sqlite" >> .gitignore
+    echo "✅ Created .gitignore with dynamic-cli entries"
+fi
+
+echo ""
+echo "🎉 Project initialized successfully!"
+echo ""
+echo "Next steps:"
+echo "  1. Edit .dynamic-cli/config.json to add your project-specific commands"
+echo "  2. Test with: dynamic-cli example hello"
+echo "  3. Add more commands and subcommands as needed"
+echo ""
+echo "Config location: $(pwd)/.dynamic-cli/config.json"

@@ -44,12 +44,27 @@ uv run -m dynamic_cli.cli --config config/cli_config.json jp users
 
 **Config file resolution:**
 The CLI automatically looks for config files in this order:
-1. `./cli_config.json` (current directory)
-2. `./config/cli_config.json` (current directory)
-3. `~/.config/dynamic-cli/config.json` (user config)
-4. `~/.dynamic-cli/config.json` (user config)
-5. `$DYNAMIC_CLI_CONFIG` (environment variable)
-6. `/etc/dynamic-cli/config.json` (system-wide)
+1. `./.dynamic-cli/config.json` (project-specific - **recommended**)
+2. `./.dynamic-cli/cli_config.json` (project-specific alternative)
+3. `./cli_config.json` (current directory)
+4. `./config/cli_config.json` (current directory)
+5. `$DYNAMIC_CLI_CONFIG` (environment variable override)
+6. `~/.config/dynamic-cli/config.json` (user fallback)
+7. `~/.dynamic-cli/config.json` (user fallback)
+8. `/etc/dynamic-cli/config.json` (system-wide fallback)
+
+**Project-specific setup (recommended):**
+```bash
+# Method 1: Use the initialization script (easiest)
+/path/to/dynamic-cli/bin/dynamic-cli-init
+# or for new project:
+/path/to/dynamic-cli/bin/dynamic-cli-init my-new-project
+
+# Method 2: Manual setup
+mkdir .dynamic-cli
+cp /path/to/template/config.json .dynamic-cli/config.json
+# Edit .dynamic-cli/config.json for project-specific commands
+```
 
 ### Starting the MCP Server (Admin UI)
 ```bash

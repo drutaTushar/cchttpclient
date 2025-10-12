@@ -1,0 +1,17 @@
+#!/bin/bash
+# Dynamic CLI wrapper script - path independent
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+CONFIG_PATH="$PROJECT_ROOT/config/cli_config.json"
+
+# Check if config exists
+if [ ! -f "$CONFIG_PATH" ]; then
+    echo "❌ Config file not found at: $CONFIG_PATH"
+    echo "Please ensure the config file exists or use --config option"
+    exit 1
+fi
+
+# Run the CLI with absolute paths, preserving user's working directory
+cd "$PROJECT_ROOT" && uv run -m dynamic_cli.cli --config "$CONFIG_PATH" "$@"
