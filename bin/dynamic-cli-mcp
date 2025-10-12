@@ -1,0 +1,52 @@
+#!/bin/bash
+# Dynamic CLI MCP Server wrapper script - path independent
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Default values
+HOST="localhost"
+PORT="8001"
+CONFIG_ARG=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --config)
+            CONFIG_ARG="--config $2"
+            shift 2
+            ;;
+        --host)
+            HOST="$2"
+            shift 2
+            ;;
+        --port)
+            PORT="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Dynamic CLI MCP Server"
+            echo ""
+            echo "Usage: dynamic-cli-mcp [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --config PATH    Path to CLI configuration (auto-detected if not specified)"
+            echo "  --host TEXT      Host to bind [default: localhost]"
+            echo "  --port INTEGER   Port to bind [default: 8001]"
+            echo "  -h, --help       Show this message and exit"
+            echo ""
+            echo "The MCP server provides semantic command search for LLM integration."
+            echo "Connect your LLM client to: http://$HOST:$PORT/sse"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Run the MCP server with absolute paths
+cd "$PROJECT_ROOT" && uv run python dynamic_cli_mcp_server.py $CONFIG_ARG --host "$HOST" --port "$PORT"

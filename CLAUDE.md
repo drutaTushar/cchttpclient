@@ -13,9 +13,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install globally with uv
 uv tool install .
 
-# Then use from anywhere
-dynamic-cli jp users
-dynamic-cli storage list my-bucket --prefix data/
+# Then use from anywhere - all four utilities are available:
+dynamic-cli jp users                    # Main CLI for running commands
+dynamic-cli-admin                       # Web admin interface (port 8765)
+dynamic-cli-mcp                         # MCP server for LLMs (port 8001) 
+dynamic-cli-init my-new-project         # Initialize new projects
 ```
 
 **Option 2: Shell wrapper script**
@@ -66,7 +68,7 @@ cp /path/to/template/config.json .dynamic-cli/config.json
 # Edit .dynamic-cli/config.json for project-specific commands
 ```
 
-### Starting the MCP Server (Admin UI)
+### Starting the Admin Server (Web UI)
 ```bash
 # Using the dedicated admin command (recommended)
 dynamic-cli-admin
@@ -74,17 +76,18 @@ dynamic-cli-admin
 # Or with custom options  
 dynamic-cli-admin --host 0.0.0.0 --port 8765
 
-# Or using the module directly
-uv run -m dynamic_cli.admin_server serve --config config/cli_config.json --host 0.0.0.0 --port 8765
+# Admin interface will be available at: http://localhost:8765/ui
 ```
 
 ### Starting the MCP Server (for LLM integration)
 ```bash
-# Network transport (default: localhost:8001)
-uv run python dynamic_cli_mcp_server.py --config config/cli_config.json
+# Using the dedicated MCP command (recommended)
+dynamic-cli-mcp
 
 # Custom host and port
-uv run python dynamic_cli_mcp_server.py --config config/cli_config.json --host 0.0.0.0 --port 8001
+dynamic-cli-mcp --host 0.0.0.0 --port 8001
+
+# Connect your LLM client to: http://localhost:8001/sse
 ```
 
 ### Code Quality

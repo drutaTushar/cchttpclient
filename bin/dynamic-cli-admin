@@ -1,0 +1,51 @@
+#!/bin/bash
+# Dynamic CLI Admin Server wrapper script - path independent
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Default values
+HOST="127.0.0.1"
+PORT="8765"
+CONFIG_ARG=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --config)
+            CONFIG_ARG="--config $2"
+            shift 2
+            ;;
+        --host)
+            HOST="$2"
+            shift 2
+            ;;
+        --port)
+            PORT="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Dynamic CLI Admin Server"
+            echo ""
+            echo "Usage: dynamic-cli-admin [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --config PATH    Path to CLI configuration (auto-detected if not specified)"
+            echo "  --host TEXT      Host to bind [default: 127.0.0.1]"
+            echo "  --port INTEGER   Port to bind [default: 8765]"
+            echo "  -h, --help       Show this message and exit"
+            echo ""
+            echo "The admin server provides a web interface for managing CLI commands."
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Run the admin server with absolute paths
+cd "$PROJECT_ROOT" && uv run -m dynamic_cli.admin_main $CONFIG_ARG --host "$HOST" --port "$PORT"
