@@ -71,13 +71,13 @@ cp /path/to/template/config.json .dynamic-cli/config.json
 python -m dynamic_cli.mcp_server --config config/cli_config.json --host 0.0.0.0 --port 8765
 ```
 
-### Starting the Proper MCP Server (for LLM integration)
+### Starting the MCP Server (for LLM integration)
 ```bash
-# Network transport (default: localhost:8000)
-uv run -m dynamic_cli.mcp_server_proper --config config/cli_config.json
+# Network transport (default: localhost:8001)
+uv run python dynamic_cli_mcp_server.py --config config/cli_config.json
 
 # Custom host and port
-uv run -m dynamic_cli.mcp_server_proper --config config/cli_config.json --host 0.0.0.0 --port 8001
+uv run python dynamic_cli_mcp_server.py --config config/cli_config.json --host 0.0.0.0 --port 8001
 ```
 
 ### Code Quality
@@ -143,10 +143,12 @@ The project provides two MCP server implementations:
    - **Admin web interface** at `/ui` for command management  
    - **AI code generation** using OpenAI GPT-4o to generate prepare/response functions
    - **Command CRUD operations** via REST API
+   - **Query validation management** for validated query mappings
 
-2. **Proper MCP Server** (`mcp_server_proper.py`): Standard MCP protocol implementation
+2. **MCP Server** (`dynamic_cli_mcp_server.py`): Standard MCP protocol implementation  
    - **Semantic command search tool** for LLMs to find relevant CLI commands
    - **Network transport (SSE)** for easy debugging and connection
+   - **Query caching** and **validated queries** for improved performance
    - **Compatible with MCP Inspector** and other MCP clients
    - **Returns CLI command templates** with argument examples
 
