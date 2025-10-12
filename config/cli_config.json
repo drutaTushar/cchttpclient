@@ -194,7 +194,7 @@
   ],
   "mcp": {
     "embedding_model": "text-embedding-3-small",
-    "persist_path": "data/mcp_embeddings.sqlite",
+    "persist_path": "embeddings.sqlite",
     "api_key_env": "OPENAI_API_KEY",
     "api_base": null,
     "collection_name": "command_descriptions",

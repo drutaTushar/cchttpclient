@@ -140,6 +140,34 @@ class EmbeddingStore:
                 )
                 """
             )
+            
+            # Query cache table for embedding cache
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS query_cache (
+                    query_text TEXT PRIMARY KEY,
+                    query_hash TEXT NOT NULL,
+                    embedding BLOB NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            
+            # Validated queries table for exact matches
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS validated_queries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    query_text TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    subcommand TEXT NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    validated_by TEXT DEFAULT 'user',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(query_text, command, subcommand)
+                )
+                """
+            )
 
     def rebuild(self, records: Sequence[EmbeddingRecord]) -> None:
         target_hashes = {record.section_id: _hash_record(record) for record in records}
@@ -221,7 +249,18 @@ class EmbeddingStore:
         return records
 
     def query(self, text: str, top_k: int = 3) -> List[Tuple[EmbeddingRecord, float]]:
-        query_vector = self.provider.embed([text])[0]
+        # First check for validated exact matches
+        validated_match = self.get_validated_query(text)
+        if validated_match:
+            command, subcommand, confidence = validated_match
+            # Find the matching record
+            records = self.all()
+            for record in records:
+                if record.command == command and record.subcommand == subcommand:
+                    return [(record, confidence)]
+        
+        # Get or create query embedding with caching
+        query_vector = self._get_cached_query_embedding(text)
         records = self.all()
         scored = [
             (record, _cosine_similarity(query_vector, record.embedding if record.embedding is not None else np.array([])))
@@ -229,6 +268,79 @@ class EmbeddingStore:
         ]
         ranked = sorted(scored, key=lambda item: item[1], reverse=True)
         return ranked[:top_k]
+    
+    def _get_cached_query_embedding(self, text: str) -> np.ndarray:
+        """Get query embedding from cache or compute and cache it."""
+        query_hash = _hash_text(text)
+        
+        with sqlite3.connect(self.path) as conn:
+            conn.row_factory = sqlite3.Row
+            cached = conn.execute(
+                "SELECT embedding FROM query_cache WHERE query_hash = ?",
+                (query_hash,)
+            ).fetchone()
+            
+            if cached:
+                return np.frombuffer(cached["embedding"], dtype=np.float32)
+        
+        # Compute new embedding
+        query_vector = self.provider.embed([text])[0]
+        
+        # Cache it
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO query_cache (query_text, query_hash, embedding) VALUES (?, ?, ?)",
+                (text, query_hash, query_vector.astype(np.float32).tobytes())
+            )
+        
+        return query_vector
+    
+    def get_validated_query(self, text: str) -> Optional[Tuple[str, str, float]]:
+        """Check if query has a validated exact match."""
+        with sqlite3.connect(self.path) as conn:
+            conn.row_factory = sqlite3.Row
+            result = conn.execute(
+                "SELECT command, subcommand, confidence FROM validated_queries WHERE query_text = ?",
+                (text,)
+            ).fetchone()
+            
+            if result:
+                return (result["command"], result["subcommand"], result["confidence"])
+        return None
+    
+    def add_validated_query(self, query_text: str, command: str, subcommand: str, confidence: float = 1.0) -> bool:
+        """Add a validated query mapping."""
+        try:
+            with sqlite3.connect(self.path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO validated_queries (query_text, command, subcommand, confidence) VALUES (?, ?, ?, ?)",
+                    (query_text, command, subcommand, confidence)
+                )
+            return True
+        except sqlite3.Error:
+            return False
+    
+    def get_all_validated_queries(self) -> List[Dict[str, Any]]:
+        """Get all validated queries for admin interface."""
+        with sqlite3.connect(self.path) as conn:
+            conn.row_factory = sqlite3.Row
+            results = conn.execute(
+                "SELECT * FROM validated_queries ORDER BY created_at DESC"
+            ).fetchall()
+            
+            return [dict(row) for row in results]
+    
+    def remove_validated_query(self, query_id: int) -> bool:
+        """Remove a validated query."""
+        try:
+            with sqlite3.connect(self.path) as conn:
+                cursor = conn.execute(
+                    "DELETE FROM validated_queries WHERE id = ?",
+                    (query_id,)
+                )
+                return cursor.rowcount > 0
+        except sqlite3.Error:
+            return False
 
 
 def _hash_record(record: EmbeddingRecord) -> str:

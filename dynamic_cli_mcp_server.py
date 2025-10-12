@@ -117,7 +117,7 @@ def _create_command_schema(command_name: str, subcommand) -> dict[str, Any]:
         "url": subcommand.request.url,
     }
 
-def _format_command_result(result: EmbeddingRecord, score: float) -> str:
+def _format_command_result(result: EmbeddingRecord, score: float, is_validated: bool = False) -> str:
     """Format a search result for LLM consumption."""
     
     schema = result.schema
@@ -158,7 +158,7 @@ def _format_command_result(result: EmbeddingRecord, score: float) -> str:
   • **Global install**: `uv tool install dynamic-cli` (recommended)
   • **Alias method**: `alias dynamic-cli='(cd /path/to/dynamic-cli && uv run -m dynamic_cli.cli --config config/cli_config.json)'`
   • **Script wrapper**: Create executable script with absolute paths
-**Match Score**: {score:.3f}"""
+**Match Score**: {score:.3f}{' ✅ VALIDATED' if is_validated else ''}"""
     
     return result_text
 
@@ -244,6 +244,10 @@ async def handle_call_tool(
     logger.info(f"Searching for: {query} (limit: {limit})")
     
     try:
+        # Check if this is a validated query first
+        validated_match = store.get_validated_query(query)
+        is_validated = validated_match is not None
+        
         # Perform semantic search
         results = store.query(query, top_k=limit)
         
@@ -267,12 +271,14 @@ async def handle_call_tool(
         # Format results for LLM consumption
         formatted_results = []
         for i, (record, score) in enumerate(filtered_results, 1):
-            command_info = _format_command_result(record, score)
+            command_info = _format_command_result(record, score, is_validated and i == 1)
             formatted_results.append(f"{i}. {command_info}")
         
         response_text = f"Found {len(filtered_results)} matching commands:\n\n" + "\n\n".join(formatted_results)
         
-        logger.info(f"Returning {len(filtered_results)} results (filtered from {len(results)} with threshold {MIN_CONFIDENCE_SCORE})")
+        # Log performance info
+        cache_status = "✅ VALIDATED" if is_validated else "🔍 COMPUTED"
+        logger.info(f"{cache_status} query '{query}' -> {len(filtered_results)} results (filtered from {len(results)})")
         return [types.TextContent(type="text", text=response_text)]
         
     except Exception as e:

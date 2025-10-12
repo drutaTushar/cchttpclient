@@ -448,6 +448,66 @@ class MCPApplication:
                 logging.error(f"Command deletion failed: {e}")
                 raise HTTPException(status_code=500, detail=f"Command deletion failed: {str(e)}")
 
+        # Validated Queries API endpoints
+        @app.get("/validated-queries")
+        def get_validated_queries():
+            """Get all validated queries."""
+            try:
+                if not self.store:
+                    return {"results": []}
+                
+                queries = self.store.get_all_validated_queries()
+                return {"results": queries}
+            except Exception as e:
+                logging.error(f"Failed to get validated queries: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to get validated queries: {str(e)}")
+
+        @app.post("/validated-queries")
+        def add_validated_query(request: Dict[str, Any]):
+            """Add a new validated query mapping."""
+            try:
+                if not self.store:
+                    raise HTTPException(status_code=500, detail="Embedding store not initialized")
+                
+                query_text = request.get("query_text")
+                command = request.get("command")
+                subcommand = request.get("subcommand")
+                confidence = request.get("confidence", 1.0)
+                
+                if not query_text or not command or not subcommand:
+                    raise HTTPException(status_code=400, detail="Missing required fields: query_text, command, subcommand")
+                
+                success = self.store.add_validated_query(query_text, command, subcommand, confidence)
+                if success:
+                    return {"status": "added", "query_text": query_text, "command": command, "subcommand": subcommand}
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to add validated query")
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                logging.error(f"Failed to add validated query: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to add validated query: {str(e)}")
+
+        @app.delete("/validated-queries/{query_id}")
+        def delete_validated_query(query_id: int):
+            """Delete a validated query by ID."""
+            try:
+                if not self.store:
+                    raise HTTPException(status_code=500, detail="Embedding store not initialized")
+                
+                success = self.store.remove_validated_query(query_id)
+                if success:
+                    return {"status": "deleted", "query_id": query_id}
+                else:
+                    raise HTTPException(status_code=404, detail="Validated query not found")
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                logging.error(f"Failed to delete validated query: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to delete validated query: {str(e)}")
+
         @app.get("/ui", response_class=HTMLResponse)
         def ui_page() -> HTMLResponse:
             static_path = Path(__file__).parent.parent.parent / "static" / "admin.html"

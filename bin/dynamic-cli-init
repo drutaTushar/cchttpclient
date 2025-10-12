@@ -63,7 +63,7 @@ if [ ! -f ".dynamic-cli/config.json" ]; then
   ],
   "mcp": {
     "embedding_model": "text-embedding-3-small",
-    "persist_path": ".dynamic-cli/embeddings.sqlite",
+    "persist_path": "embeddings.sqlite",
     "api_key_env": "OPENAI_API_KEY",
     "api_base": null,
     "collection_name": "command_descriptions",

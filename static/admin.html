@@ -141,6 +141,7 @@
             <button class="tab active" onclick="showTab('commands')">Commands</button>
             <button class="tab" onclick="showTab('create')">Create Command</button>
             <button class="tab" onclick="showTab('test')">Test</button>
+            <button class="tab" onclick="showTab('validation')">Query Validation</button>
             <button class="tab" onclick="showTab('config')">Raw Config</button>
         </div>
 
@@ -254,6 +255,52 @@
                 
                 <h3>Result</h3>
                 <pre id="test-output"></pre>
+            </section>
+        </div>
+
+        <!-- Query Validation Tab -->
+        <div id="validation-tab" class="tab-content">
+            <h2>Query Validation</h2>
+            <p>Manage validated query mappings for improved accuracy and performance.</p>
+            
+            <section>
+                <h3>Add Validated Query</h3>
+                <div class="form-group">
+                    <label for="validation-query">Query Text:</label>
+                    <input type="text" id="validation-query" placeholder="e.g., get list of users" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                </div>
+                <div class="form-group">
+                    <label for="validation-command">Command:</label>
+                    <input type="text" id="validation-command" placeholder="e.g., jp" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                </div>
+                <div class="form-group">
+                    <label for="validation-subcommand">Subcommand:</label>
+                    <input type="text" id="validation-subcommand" placeholder="e.g., users" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                </div>
+                <div class="form-group">
+                    <label for="validation-confidence">Confidence (0.0-1.0):</label>
+                    <input type="number" id="validation-confidence" min="0" max="1" step="0.1" value="1.0" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                </div>
+                <button class="btn-success" onclick="addValidatedQuery()">Add Validated Query</button>
+            </section>
+
+            <section>
+                <h3>Existing Validated Queries</h3>
+                <table id="validation-table">
+                    <thead>
+                        <tr>
+                            <th>Query Text</th>
+                            <th>Command</th>
+                            <th>Subcommand</th>
+                            <th>Confidence</th>
+                            <th>Created At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
             </section>
         </div>
 
@@ -506,10 +553,98 @@
             }
         }
 
+        // Query Validation Management
+        async function addValidatedQuery() {
+            const queryText = document.getElementById('validation-query').value;
+            const command = document.getElementById('validation-command').value;
+            const subcommand = document.getElementById('validation-subcommand').value;
+            const confidence = parseFloat(document.getElementById('validation-confidence').value);
+            
+            if (!queryText || !command || !subcommand) {
+                alert('Please fill all required fields');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/validated-queries', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query_text: queryText,
+                        command: command,
+                        subcommand: subcommand,
+                        confidence: confidence
+                    })
+                });
+                
+                if (response.ok) {
+                    // Clear form
+                    document.getElementById('validation-query').value = '';
+                    document.getElementById('validation-command').value = '';
+                    document.getElementById('validation-subcommand').value = '';
+                    document.getElementById('validation-confidence').value = '1.0';
+                    
+                    // Refresh table
+                    loadValidatedQueries();
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || 'Failed to add validated query');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function loadValidatedQueries() {
+            try {
+                const response = await fetch('/validated-queries');
+                const data = await response.json();
+                const tbody = document.querySelector('#validation-table tbody');
+                tbody.innerHTML = '';
+                
+                data.results.forEach((item) => {
+                    const row = document.createElement('tr');
+                    const createdAt = new Date(item.created_at).toLocaleString();
+                    row.innerHTML = `
+                        <td>${item.query_text}</td>
+                        <td>${item.command}</td>
+                        <td>${item.subcommand}</td>
+                        <td>${item.confidence}</td>
+                        <td>${createdAt}</td>
+                        <td class="command-actions">
+                            <button class="btn-danger" onclick="deleteValidatedQuery(${item.id})">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (error) {
+                console.error('Failed to load validated queries:', error);
+            }
+        }
+        
+        async function deleteValidatedQuery(queryId) {
+            if (!confirm('Delete this validated query?')) return;
+            
+            try {
+                const response = await fetch(`/validated-queries/${queryId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    loadValidatedQueries();
+                } else {
+                    alert('Failed to delete validated query');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             refreshCommands();
             loadConfig();
+            loadValidatedQueries();
         });
     </script>
 </body>

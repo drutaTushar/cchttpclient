@@ -141,9 +141,17 @@ class CLIConfig:
             )
 
         mcp_data = data["mcp"]
+        # Resolve persist_path relative to the config file directory
+        persist_path = Path(mcp_data["persist_path"])
+        if not persist_path.is_absolute():
+            # Make relative paths relative to the config file directory
+            persist_path = (path.parent / persist_path).resolve()
+        else:
+            persist_path = persist_path.expanduser()
+        
         mcp_settings = MCPSettings(
             embedding_model=mcp_data["embedding_model"],
-            persist_path=Path(mcp_data["persist_path"]).expanduser(),
+            persist_path=persist_path,
             api_key_env=mcp_data.get("api_key_env", "OPENAI_API_KEY"),
             api_base=mcp_data.get("api_base"),
             collection_name=mcp_data.get("collection_name", "command_descriptions"),
