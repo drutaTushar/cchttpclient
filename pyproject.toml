@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 dynamic-cli = "dynamic_cli.main:main"
+dynamic-cli-admin = "dynamic_cli.admin_main:main"
 
 [project.optional-dependencies]
 development = [

@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import HTMLResponse
@@ -553,18 +553,65 @@ def create_app(config_path: Path) -> FastAPI:
     return MCPApplication(config_path).app
 
 
-cli = typer.Typer(help="Dynamic CLI MCP server")
+cli = typer.Typer(help="Dynamic CLI Admin Server - Web interface for command management")
+
+
+def find_config_file() -> Optional[Path]:
+    """Find the config file in various standard locations."""
+    import os
+    
+    # List of possible config locations (in order of preference)
+    possible_paths = [
+        # Project-specific config (highest priority)
+        Path.cwd() / ".dynamic-cli" / "config.json",
+        Path.cwd() / ".dynamic-cli" / "cli_config.json",
+        
+        # Current working directory
+        Path.cwd() / "cli_config.json",
+        Path.cwd() / "config" / "cli_config.json",
+        
+        # Environment variable
+        Path(os.getenv("DYNAMIC_CLI_CONFIG", "")) if os.getenv("DYNAMIC_CLI_CONFIG") else None,
+        
+        # User home directory (fallback)
+        Path.home() / ".config" / "dynamic-cli" / "config.json",
+        Path.home() / ".dynamic-cli" / "config.json",
+        
+        # System-wide config (last resort)
+        Path("/etc/dynamic-cli/config.json"),
+    ]
+    
+    for config_path in possible_paths:
+        if config_path and config_path.exists():
+            return config_path
+    
+    return None
 
 
 @cli.command()
 def serve(
-    config: Path = typer.Option(..., "--config", help="Path to CLI configuration"),
+    config: Optional[Path] = typer.Option(None, "--config", help="Path to CLI configuration (auto-detected if not specified)"),
     host: str = typer.Option("127.0.0.1", help="Host to bind"),
     port: int = typer.Option(8765, help="Port to bind"),
 ):
-    """Run the MCP server."""
+    """Run the admin server with web interface for command management."""
+
+    # Auto-detect config if not provided
+    if not config:
+        config = find_config_file()
+        if not config:
+            typer.echo(
+                "❌ No config file found. Please either:\\n"
+                "  • Create .dynamic-cli/config.json in current directory (project-specific)\\n"
+                "  • Create cli_config.json in current directory\\n"
+                "  • Use --config option to specify path explicitly",
+                err=True
+            )
+            raise typer.Exit(1)
+        typer.echo(f"📁 Using config: {config}")
 
     app = create_app(config)
+    typer.echo(f"🌐 Admin interface available at: http://{host}:{port}/ui")
     uvicorn.run(app, host=str(host), port=int(port))
 
 

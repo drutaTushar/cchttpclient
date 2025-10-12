@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["create_cli_app", "create_mcp_app"]
+__all__ = ["create_cli_app", "create_admin_app"]
 
 
 def create_cli_app(*args: Any, **kwargs: Any):
@@ -15,9 +15,9 @@ def create_cli_app(*args: Any, **kwargs: Any):
     return create_app(*args, **kwargs)
 
 
-def create_mcp_app(*args: Any, **kwargs: Any):
-    """Create the MCP FastAPI application lazily."""
+def create_admin_app(*args: Any, **kwargs: Any):
+    """Create the Admin FastAPI application lazily."""
 
-    from .mcp_server import create_app
+    from .admin_server import create_app
 
     return create_app(*args, **kwargs)

@@ -68,7 +68,14 @@ cp /path/to/template/config.json .dynamic-cli/config.json
 
 ### Starting the MCP Server (Admin UI)
 ```bash
-python -m dynamic_cli.mcp_server --config config/cli_config.json --host 0.0.0.0 --port 8765
+# Using the dedicated admin command (recommended)
+dynamic-cli-admin
+
+# Or with custom options  
+dynamic-cli-admin --host 0.0.0.0 --port 8765
+
+# Or using the module directly
+uv run -m dynamic_cli.admin_server serve --config config/cli_config.json --host 0.0.0.0 --port 8765
 ```
 
 ### Starting the MCP Server (for LLM integration)
@@ -139,7 +146,7 @@ Inline scripts have access to a `helpers` object providing:
 
 The project provides two MCP server implementations:
 
-1. **Admin UI Server** (`mcp_server.py`): FastAPI-based web interface for command management
+1. **Admin UI Server** (`admin_server.py`): FastAPI-based web interface for command management
    - **Admin web interface** at `/ui` for command management  
    - **AI code generation** using OpenAI GPT-4o to generate prepare/response functions
    - **Command CRUD operations** via REST API
