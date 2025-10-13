@@ -18,8 +18,8 @@ from starlette.routing import Mount, Route
 import uvicorn
 
 # Import your existing modules
-from src.dynamic_cli.config import CLIConfig
-from src.dynamic_cli.embedding import EmbeddingStore, EmbeddingRecord
+from .config import CLIConfig
+from .embedding import EmbeddingStore, EmbeddingRecord
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

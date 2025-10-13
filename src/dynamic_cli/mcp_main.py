@@ -66,16 +66,14 @@ Connect your LLM client to the SSE endpoint.
         print(f"📁 Using config: {config_path}")
     
     try:
-        # Add the project root to Python path
-        project_root = Path(__file__).parent.parent.parent
-        sys.path.insert(0, str(project_root))
-        
-        # Import and run the MCP server
-        from dynamic_cli_mcp_server import main as mcp_main
+        # Import and run the MCP server from the package
+        from . import dynamic_cli_mcp_server
         
         # Override sys.argv with our parsed arguments
+        original_argv = sys.argv[:]
         sys.argv = ["dynamic_cli_mcp_server.py", "--config", str(config_path), "--host", host, "--port", str(port)]
-        mcp_main()
+        
+        dynamic_cli_mcp_server.main()
         
     except KeyboardInterrupt:
         print("\n👋 MCP server stopped")
