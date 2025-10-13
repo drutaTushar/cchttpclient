@@ -5,13 +5,13 @@ import inspect
 import json
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import httpx
 import typer
 
 from .config import ArgumentDefinition, CLIConfig, SubcommandDefinition
-from .scripting import RequestScript, ScriptHelpers, load_script_from_code
+from .scripting import RequestScript, ScriptHelpers, StateManager, load_script_from_code
 
 
 TYPE_MAP: Dict[str, Callable[[Any], Any]] = {
@@ -30,8 +30,9 @@ def _annotation_for_type(type_name: str):
 
 
 class CommandRuntime:
-    def __init__(self, config: CLIConfig):
+    def __init__(self, config: CLIConfig, state_manager: Optional[StateManager] = None):
         self.config = config
+        self.state_manager = state_manager
         self.script_cache: Dict[str, RequestScript] = {}
 
     def get_script(self, subcommand: SubcommandDefinition) -> RequestScript:
@@ -39,7 +40,7 @@ class CommandRuntime:
         if cache_key in self.script_cache:
             return self.script_cache[cache_key]
         
-        helpers = ScriptHelpers(config=self.config)
+        helpers = ScriptHelpers(config=self.config, state_manager=self.state_manager)
         script = load_script_from_code(subcommand.prepare_code, subcommand.response_code, helpers)
         self.script_cache[cache_key] = script
         return script
@@ -156,7 +157,10 @@ def _create_handler(runtime: CommandRuntime, subcommand: SubcommandDefinition):
 
 def create_app(config_path: Path) -> typer.Typer:
     config = CLIConfig.load(config_path)
-    runtime = CommandRuntime(config)
+    # Create state manager for the same directory as config
+    state_path = config_path.parent / "state.json"
+    state_manager = StateManager(state_path)
+    runtime = CommandRuntime(config, state_manager)
     root_app = typer.Typer(help="Dynamic HTTP client")
 
     for command in config.commands:
@@ -165,6 +169,70 @@ def create_app(config_path: Path) -> typer.Typer:
             handler = _create_handler(runtime, subcommand)
             command_app.command(subcommand.name)(handler)
         root_app.add_typer(command_app, name=command.name)
+
+    # Add built-in state management commands
+    state_app = typer.Typer(help="Manage persistent state across command executions")
+    
+    @state_app.command("show")
+    def state_show():
+        """Show all stored state data"""
+        state_data = state_manager.get_all()
+        if not state_data:
+            typer.echo("No state data stored.")
+        else:
+            typer.echo(json.dumps(state_data, indent=2))
+    
+    @state_app.command("get")
+    def state_get(key: str = typer.Argument(..., help="State key to retrieve")):
+        """Get a specific state value by key"""
+        value = state_manager.get(key)
+        if value is None:
+            typer.echo(f"No value found for key '{key}'")
+            raise typer.Exit(1)
+        typer.echo(json.dumps(value, indent=2) if isinstance(value, (dict, list)) else str(value))
+    
+    @state_app.command("set")
+    def state_set(
+        key: str = typer.Argument(..., help="State key to set"),
+        value: str = typer.Argument(..., help="State value (JSON string for complex objects)")
+    ):
+        """Set a state value by key"""
+        try:
+            # Try to parse as JSON first
+            parsed_value = json.loads(value)
+        except json.JSONDecodeError:
+            # If not valid JSON, store as string
+            parsed_value = value
+        
+        state_manager.set(key, parsed_value)
+        typer.echo(f"Set '{key}' = {json.dumps(parsed_value, indent=2) if isinstance(parsed_value, (dict, list)) else repr(parsed_value)}")
+    
+    @state_app.command("delete")
+    def state_delete(key: str = typer.Argument(..., help="State key to delete")):
+        """Delete a state value by key"""
+        if state_manager.delete(key):
+            typer.echo(f"Deleted '{key}'")
+        else:
+            typer.echo(f"Key '{key}' not found")
+            raise typer.Exit(1)
+    
+    @state_app.command("clear")
+    def state_clear():
+        """Clear all stored state data"""
+        state_manager.clear()
+        typer.echo("All state data cleared.")
+    
+    @state_app.command("keys")
+    def state_keys():
+        """List all state keys"""
+        keys = state_manager.list_keys()
+        if not keys:
+            typer.echo("No state keys found.")
+        else:
+            for key in sorted(keys):
+                typer.echo(key)
+    
+    root_app.add_typer(state_app, name="state")
 
     @root_app.callback()
     def _callback():

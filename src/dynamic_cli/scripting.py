@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Optional
 import json
 import os
 import subprocess
+import threading
 
 from .config import CLIConfig, SecretDefinition
 
@@ -19,11 +20,90 @@ class ScriptExecutionError(RuntimeError):
     pass
 
 
+class StateManager:
+    """Manages persistent state storage for CLI commands."""
+    
+    def __init__(self, state_file_path: Path):
+        self.state_file_path = state_file_path
+        self._lock = threading.Lock()
+        self._cache: Optional[Dict[str, Any]] = None
+    
+    def _load_state(self) -> Dict[str, Any]:
+        """Load state from file or return empty dict if file doesn't exist."""
+        if not self.state_file_path.exists():
+            return {}
+        
+        try:
+            with open(self.state_file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            # If file is corrupted or unreadable, start fresh
+            return {}
+    
+    def _save_state(self, state: Dict[str, Any]) -> None:
+        """Save state to file."""
+        # Ensure the directory exists
+        self.state_file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            with open(self.state_file_path, 'w', encoding='utf-8') as f:
+                json.dump(state, f, indent=2, ensure_ascii=False)
+        except IOError as e:
+            raise ScriptExecutionError(f"Failed to save state: {e}")
+    
+    def get(self, key: str, default=None) -> Any:
+        """Get a value from state."""
+        with self._lock:
+            if self._cache is None:
+                self._cache = self._load_state()
+            return self._cache.get(key, default)
+    
+    def set(self, key: str, value: Any) -> None:
+        """Set a value in state and save to file."""
+        with self._lock:
+            if self._cache is None:
+                self._cache = self._load_state()
+            self._cache[key] = value
+            self._save_state(self._cache)
+    
+    def delete(self, key: str) -> bool:
+        """Delete a key from state. Returns True if key existed."""
+        with self._lock:
+            if self._cache is None:
+                self._cache = self._load_state()
+            if key in self._cache:
+                del self._cache[key]
+                self._save_state(self._cache)
+                return True
+            return False
+    
+    def clear(self) -> None:
+        """Clear all state."""
+        with self._lock:
+            self._cache = {}
+            self._save_state(self._cache)
+    
+    def list_keys(self) -> list[str]:
+        """Get all state keys."""
+        with self._lock:
+            if self._cache is None:
+                self._cache = self._load_state()
+            return list(self._cache.keys())
+    
+    def get_all(self) -> Dict[str, Any]:
+        """Get all state data."""
+        with self._lock:
+            if self._cache is None:
+                self._cache = self._load_state()
+            return self._cache.copy()
+
+
 @dataclass
 class ScriptHelpers:
     """Helper functions exposed to user scripts."""
 
     config: CLIConfig
+    state_manager: Optional[StateManager] = None
 
     def secret(self, name: str) -> str:
         definition = self.config.secrets.get(name)
@@ -71,6 +151,30 @@ class ScriptHelpers:
     def map(self, items: List[Dict[str, Any]], keys: List[str]) -> List[Dict[str, Any]]:
         """Extract only specified keys from list of dictionaries."""
         return [{k: item.get(k) for k in keys} for item in items]
+    
+    def state_get(self, key: str, default=None) -> Any:
+        """Get a value from persistent state."""
+        if self.state_manager is None:
+            raise ScriptExecutionError("State management not initialized")
+        return self.state_manager.get(key, default)
+    
+    def state_set(self, key: str, value: Any) -> None:
+        """Set a value in persistent state."""
+        if self.state_manager is None:
+            raise ScriptExecutionError("State management not initialized")
+        self.state_manager.set(key, value)
+    
+    def state_delete(self, key: str) -> bool:
+        """Delete a key from persistent state. Returns True if key existed."""
+        if self.state_manager is None:
+            raise ScriptExecutionError("State management not initialized")
+        return self.state_manager.delete(key)
+    
+    def state_clear(self) -> None:
+        """Clear all persistent state."""
+        if self.state_manager is None:
+            raise ScriptExecutionError("State management not initialized")
+        self.state_manager.clear()
 
 
 @dataclass

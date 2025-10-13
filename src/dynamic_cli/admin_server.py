@@ -56,7 +56,22 @@ ADMIN_HTML = """<!DOCTYPE html>
         }
         .code-editor {
             min-height: 200px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            line-height: 1.5;
+            tab-size: 4;
         }
+        .code-editor:focus {
+            outline: 2px solid #007bff;
+            outline-offset: -2px;
+        }
+        
+        /* Python syntax highlighting classes (for display) */
+        .python-keyword { color: #569cd6; font-weight: bold; }
+        .python-string { color: #ce9178; }
+        .python-comment { color: #6a9955; font-style: italic; }
+        .python-function { color: #dcdcaa; }
+        .python-number { color: #b5cea8; }
         button { 
             padding: 0.75rem 1.5rem; 
             margin-right: 0.5rem; 
@@ -162,6 +177,7 @@ ADMIN_HTML = """<!DOCTYPE html>
         <div class="tabs">
             <button class="tab active" onclick="showTab('commands')">Commands</button>
             <button class="tab" onclick="showTab('create')">Create Command</button>
+            <button class="tab" onclick="showTab('edit')" id="edit-tab-button" style="display: none;">Edit Command</button>
             <button class="tab" onclick="showTab('test')">Test</button>
             <button class="tab" onclick="showTab('validation')">Query Validation</button>
             <button class="tab" onclick="showTab('config')">Raw Config</button>
@@ -250,6 +266,76 @@ ADMIN_HTML = """<!DOCTYPE html>
                     
                     <button type="submit" class="btn-success">Create Command</button>
                     <span id="create-status" class="status"></span>
+                </form>
+            </section>
+        </div>
+
+        <!-- Edit Command Tab -->
+        <div id="edit-tab" class="tab-content">
+            <section>
+                <h2 id="edit-title">Edit Command</h2>
+                <form id="edit-command-form">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="edit-cmd-name">Command Name (read-only)</label>
+                            <input type="text" id="edit-cmd-name" readonly style="background-color: #f8f9fa;">
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-cmd-subcommand">Subcommand (read-only)</label>
+                            <input type="text" id="edit-cmd-subcommand" readonly style="background-color: #f8f9fa;">
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-cmd-method">HTTP Method</label>
+                            <select id="edit-cmd-method">
+                                <option value="GET">GET</option>
+                                <option value="POST">POST</option>
+                                <option value="PUT">PUT</option>
+                                <option value="DELETE">DELETE</option>
+                                <option value="PATCH">PATCH</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="edit-cmd-help">Help Text</label>
+                        <input type="text" id="edit-cmd-help" placeholder="Brief description of what this command does">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="edit-cmd-url">URL Template</label>
+                        <input type="text" id="edit-cmd-url" placeholder="https://api.example.com/v1/{resource}" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="edit-cmd-description">Command Description (for AI)</label>
+                        <textarea id="edit-cmd-description" placeholder="Describe what this command should do. This will be used to generate the request/response processing code."></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="edit-processor-prompt">Processing Instructions (for AI)</label>
+                        <textarea id="edit-processor-prompt" placeholder="Describe how to process the request and response. E.g., 'Add authorization headers, format the response to show only the data field'"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <button type="button" class="btn-primary" onclick="generateEditCode()">Regenerate Code with AI</button>
+                        <span id="edit-generate-status" class="status"></span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="edit-prepare-code">Request Preparation Code</label>
+                        <textarea id="edit-prepare-code" class="code-editor" placeholder="def prepare(request, helpers):&#10;    return request"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="edit-response-code">Response Processing Code</label>
+                        <textarea id="edit-response-code" class="code-editor" placeholder="def process_response(response, helpers):&#10;    return response"></textarea>
+                    </div>
+                    
+                    <div style="margin-top: 1rem;">
+                        <button type="submit" class="btn-success">Update Command</button>
+                        <button type="button" class="btn-secondary" onclick="cancelEdit()">Cancel</button>
+                        <span id="edit-status" class="status"></span>
+                    </div>
                 </form>
             </section>
         </div>
@@ -384,8 +470,35 @@ ADMIN_HTML = """<!DOCTYPE html>
         }
 
         async function editCommand(command, subcommand) {
-            // TODO: Implement edit functionality
-            alert('Edit functionality will be implemented');
+            try {
+                const response = await fetch(`/commands/${command}/${subcommand}`);
+                if (!response.ok) {
+                    alert('Failed to load command for editing');
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                // Populate edit form
+                document.getElementById('edit-cmd-name').value = data.command;
+                document.getElementById('edit-cmd-subcommand').value = data.subcommand;
+                document.getElementById('edit-cmd-method').value = data.method;
+                document.getElementById('edit-cmd-help').value = data.help || '';
+                document.getElementById('edit-cmd-url').value = data.url || '';
+                document.getElementById('edit-prepare-code').value = data.prepare_code || '';
+                document.getElementById('edit-response-code').value = data.response_code || '';
+                
+                // Update title
+                document.getElementById('edit-title').textContent = `Edit Command: ${command} ${subcommand}`;
+                
+                // Show edit tab and hide tab button
+                document.getElementById('edit-tab-button').style.display = 'block';
+                showTab('edit');
+                
+            } catch (error) {
+                console.error('Failed to load command for editing:', error);
+                alert('Failed to load command for editing');
+            }
         }
 
         async function deleteCommand(command, subcommand) {
@@ -453,6 +566,57 @@ ADMIN_HTML = """<!DOCTYPE html>
             }
         }
 
+        // AI Code Generation for Edit Form
+        async function generateEditCode() {
+            const description = document.getElementById('edit-cmd-description').value;
+            const processorPrompt = document.getElementById('edit-processor-prompt').value;
+            const method = document.getElementById('edit-cmd-method').value;
+            const url = document.getElementById('edit-cmd-url').value;
+            
+            if (!description || !processorPrompt) {
+                document.getElementById('edit-generate-status').textContent = 'Please provide both description and processing instructions';
+                document.getElementById('edit-generate-status').className = 'status error';
+                return;
+            }
+            
+            document.getElementById('edit-generate-status').textContent = 'Generating code...';
+            document.getElementById('edit-generate-status').className = 'status info';
+            
+            try {
+                const response = await fetch('/generate-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        description,
+                        processor_prompt: processorPrompt,
+                        method,
+                        url
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('edit-prepare-code').value = data.prepare_code;
+                    document.getElementById('edit-response-code').value = data.response_code;
+                    document.getElementById('edit-generate-status').textContent = 'Code generated successfully!';
+                    document.getElementById('edit-generate-status').className = 'status success';
+                } else {
+                    const error = await response.json();
+                    document.getElementById('edit-generate-status').textContent = error.detail || 'Failed to generate code';
+                    document.getElementById('edit-generate-status').className = 'status error';
+                }
+            } catch (error) {
+                document.getElementById('edit-generate-status').textContent = 'Error: ' + error.message;
+                document.getElementById('edit-generate-status').className = 'status error';
+            }
+        }
+
+        // Cancel edit and return to commands tab
+        function cancelEdit() {
+            document.getElementById('edit-tab-button').style.display = 'none';
+            showTab('commands');
+        }
+
         // Command creation
         document.getElementById('command-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -490,6 +654,49 @@ ADMIN_HTML = """<!DOCTYPE html>
             } catch (error) {
                 document.getElementById('create-status').textContent = 'Error: ' + error.message;
                 document.getElementById('create-status').className = 'status error';
+            }
+        });
+
+        // Command editing
+        document.getElementById('edit-command-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const command = document.getElementById('edit-cmd-name').value;
+            const subcommand = document.getElementById('edit-cmd-subcommand').value;
+            const formData = {
+                help: document.getElementById('edit-cmd-help').value,
+                method: document.getElementById('edit-cmd-method').value,
+                url: document.getElementById('edit-cmd-url').value,
+                prepare_code: document.getElementById('edit-prepare-code').value,
+                response_code: document.getElementById('edit-response-code').value
+            };
+            
+            document.getElementById('edit-status').textContent = 'Updating command...';
+            document.getElementById('edit-status').className = 'status info';
+            
+            try {
+                const response = await fetch(`/commands/${command}/${subcommand}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                
+                if (response.ok) {
+                    document.getElementById('edit-status').textContent = 'Command updated successfully!';
+                    document.getElementById('edit-status').className = 'status success';
+                    refreshCommands();
+                    // Auto-hide edit tab after successful update
+                    setTimeout(() => {
+                        cancelEdit();
+                    }, 2000);
+                } else {
+                    const error = await response.json();
+                    document.getElementById('edit-status').textContent = error.detail || 'Failed to update command';
+                    document.getElementById('edit-status').className = 'status error';
+                }
+            } catch (error) {
+                document.getElementById('edit-status').textContent = 'Error: ' + error.message;
+                document.getElementById('edit-status').className = 'status error';
             }
         });
 
@@ -708,6 +915,14 @@ class GenerateCodeRequest(BaseModel):
 class CreateCommandRequest(BaseModel):
     command: str
     subcommand: str
+    help: str = ""
+    method: str = "GET"
+    url: str
+    prepare_code: str = ""
+    response_code: str = ""
+
+
+class EditCommandRequest(BaseModel):
     help: str = ""
     method: str = "GET"
     url: str
@@ -1074,6 +1289,81 @@ class MCPApplication:
             except Exception as e:
                 logging.error(f"Command creation failed: {e}")
                 raise HTTPException(status_code=500, detail=f"Command creation failed: {str(e)}")
+
+        @app.get("/commands/{command}/{subcommand}")
+        def get_command(command: str, subcommand: str) -> Dict[str, Any]:
+            """Get a specific command for editing."""
+            try:
+                # Load current config
+                config_data = json.loads(self.config_path.read_text())
+                
+                # Find the command and subcommand
+                for cmd in config_data.get("commands", []):
+                    if cmd["name"] == command:
+                        for subcmd in cmd["subcommands"]:
+                            if subcmd["name"] == subcommand:
+                                return {
+                                    "command": command,
+                                    "subcommand": subcommand,
+                                    "help": subcmd.get("help", ""),
+                                    "method": subcmd.get("request", {}).get("method", "GET"),
+                                    "url": subcmd.get("request", {}).get("url", ""),
+                                    "prepare_code": subcmd.get("prepare_code", ""),
+                                    "response_code": subcmd.get("response_code", ""),
+                                    "arguments": subcmd.get("arguments", []),
+                                    "request": subcmd.get("request", {})
+                                }
+                
+                raise HTTPException(status_code=404, detail="Command not found")
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                logging.error(f"Failed to get command: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to get command: {str(e)}")
+
+        @app.put("/commands/{command}/{subcommand}")
+        def update_command(command: str, subcommand: str, request: EditCommandRequest) -> Dict[str, str]:
+            """Update an existing command in the configuration."""
+            try:
+                # Load current config
+                config_data = json.loads(self.config_path.read_text())
+                
+                # Find and update the command
+                found = False
+                for cmd in config_data.get("commands", []):
+                    if cmd["name"] == command:
+                        for subcmd in cmd["subcommands"]:
+                            if subcmd["name"] == subcommand:
+                                # Update the subcommand data
+                                subcmd["help"] = request.help
+                                subcmd["prepare_code"] = request.prepare_code
+                                subcmd["response_code"] = request.response_code
+                                
+                                # Update request configuration
+                                if "request" not in subcmd:
+                                    subcmd["request"] = {}
+                                subcmd["request"]["method"] = request.method
+                                subcmd["request"]["url"] = request.url
+                                
+                                found = True
+                                break
+                        break
+                
+                if not found:
+                    raise HTTPException(status_code=404, detail="Command not found")
+                
+                # Save config
+                self.config_path.write_text(json.dumps(config_data, indent=2))
+                self._reload_config()
+                
+                return {"status": "updated"}
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                logging.error(f"Command update failed: {e}")
+                raise HTTPException(status_code=500, detail=f"Command update failed: {str(e)}")
 
         @app.delete("/commands")
         def delete_command(request: DeleteCommandRequest) -> Dict[str, str]:
