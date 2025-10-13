@@ -3,3 +3,4 @@ __pycache__
 *.sqlite
 # Dynamic CLI
 .dynamic-cli/embeddings.sqlite
+build

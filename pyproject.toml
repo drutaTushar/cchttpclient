@@ -1,6 +1,6 @@
 [project]
 name = "dynamic-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Config-driven HTTP CLI and MCP server"
 authors = [{ name = "Example", email = "example@example.com" }]
 requires-python = ">=3.11"
