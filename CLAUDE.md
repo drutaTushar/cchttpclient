@@ -188,3 +188,68 @@ The admin UI can generate Python code for commands using OpenAI:
 - Commands can be created and managed through the web UI
 - Set `OPENAI_API_KEY` environment variable for AI code generation
 - HTTP timeout defaults to 30 seconds but can be overridden per-request or globally
+
+## Work Items and Task and Issue Tracking
+We track work in Beads instead of Markdown. Run \`bd quickstart\` to see how. Make sure you use `--json` flag when talking with `bd`
+
+### Typical worklflow
+
+1. Project or Story Kickoff
+   1.1 Claude creates issues - Example : `bd create "Set up Next.js project" -p 0 -t task -d <description>`
+   1.2 Map dependencies - Example : `bd dep add bd-4 bd-2  # API depends on schema`
+   1.3 Visualise : `bd dep tree bd-7`
+   1.4 Check ready work to map tasks to start work on : `bd ready`
+2. Foundation
+   2.1 Let's continue Protocol (explained below)
+   2.2 Wait for user to select task
+   2.3 If you discover blockers add dependency - `bd dep add bd-4 bd-8  # API now depends on OAuth`
+   2.4 When tasks is completed mark it as unblocked - `bd close bd-8 --reason "OAuth configured for Google and GitHub"`
+
+### The "Let's Continue" Protocol
+
+**Start of every session:**
+
+```
+# 1. Check for abandoned work
+bd list --status in_progress
+
+# 2. If none, get ready work
+bd ready --limit 5
+
+# 3. Show top priority
+bd show bd-X
+```
+
+- Let user select task to work on from avaialable unblocked tasks
+- If 
+
+### Add context with comments:
+
+```
+bd update bd-5 --status in_progress
+# Work session ends mid-task
+bd comment bd-5 "Implemented navbar and footer, still need shopping cart icon"
+```
+
+### Break down epics when too big:
+
+```
+bd create "Epic: User Management" -p 1 -t epic
+bd create "User registration flow" -p 1 -t task
+bd create "User login/logout" -p 1 -t task
+bd create "Password reset" -p 2 -t task
+
+bd dep add bd-10 bd-9 --type parent-child
+bd dep add bd-11 bd-9 --type parent-child
+bd dep add bd-12 bd-9 --type parent-child
+```   
+
+### Use labels for filtering:
+
+```
+bd create "Fix login timeout" -p 0 -l "bug,auth,urgent"
+bd create "Add loading spinner" -p 2 -l "ui,polish"
+
+# Later
+bd list --status open | grep urgent
+```
