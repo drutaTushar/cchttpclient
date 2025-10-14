@@ -4,3 +4,4 @@ __pycache__
 # Dynamic CLI
 .dynamic-cli/embeddings.sqlite
 build
+.beads/*.db
