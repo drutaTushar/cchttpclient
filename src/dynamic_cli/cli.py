@@ -143,7 +143,25 @@ def _create_handler(runtime: CommandRuntime, subcommand: SubcommandDefinition):
                         response = client.request(**request_args)
                     response.raise_for_status()
                 except httpx.HTTPStatusError as e:
-                    typer.echo(f"HTTP {e.response.status_code}: {e.response.reason_phrase}", err=True)
+                    error_msg = f"HTTP {e.response.status_code}: {e.response.reason_phrase}"
+                    
+                    # Attempt to read and append response body if available
+                    try:
+                        response_body = e.response.text
+                        if response_body and response_body.strip():
+                            # Try to parse as JSON for better formatting
+                            try:
+                                parsed_body = json.loads(response_body)
+                                body_str = json.dumps(parsed_body, indent=2)
+                            except (json.JSONDecodeError, ValueError):
+                                # Not valid JSON, use as-is
+                                body_str = response_body.strip()
+                            error_msg += f"\nResponse body:\n{body_str}"
+                    except Exception:
+                        # If we can't read the body, continue with just status info
+                        pass
+                    
+                    typer.echo(error_msg, err=True)
                     sys.exit(1)
                 except httpx.RequestError as e:
                     typer.echo(f"Request failed: {str(e)}", err=True)

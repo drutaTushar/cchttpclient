@@ -1,0 +1,83 @@
+{
+  "http_timeout": 30,
+  "secrets": {},
+  "commands": [
+    {
+      "name": "test",
+      "help": "Test error handling",
+      "subcommands": [
+        {
+          "name": "error404",
+          "help": "Test 404 error handling",
+          "prepare_code": "def prepare(request, helpers):\n    request['method'] = 'GET'\n    request['url'] = 'https://jsonplaceholder.typicode.com/users/999'\n    return request\n",
+          "response_code": "def process_response(response, helpers):\n    return response",
+          "arguments": [],
+          "request": {
+            "method": "GET",
+            "url": "https://jsonplaceholder.typicode.com/users/999",
+            "headers": {},
+            "query": {},
+            "body": {
+              "mode": "json",
+              "template": {}
+            },
+            "response": {
+              "mode": "json",
+              "success_codes": [200]
+            }
+          }
+        },
+        {
+          "name": "error400",
+          "help": "Test 400 error handling with detailed response",
+          "prepare_code": "def prepare(request, helpers):\n    request['method'] = 'POST'\n    request['url'] = 'https://httpbin.org/status/400'\n    return request\n",
+          "response_code": "def process_response(response, helpers):\n    return response",
+          "arguments": [],
+          "request": {
+            "method": "POST",
+            "url": "https://httpbin.org/status/400",
+            "headers": {},
+            "query": {},
+            "body": {
+              "mode": "json",
+              "template": {}
+            },
+            "response": {
+              "mode": "json",
+              "success_codes": [200]
+            }
+          }
+        },
+        {
+          "name": "invalid-host",
+          "help": "Test request error with invalid host",
+          "prepare_code": "def prepare(request, helpers):\n    request['method'] = 'GET'\n    request['url'] = 'https://this-domain-does-not-exist-12345.com/api'\n    return request\n",
+          "response_code": "def process_response(response, helpers):\n    return response",
+          "arguments": [],
+          "request": {
+            "method": "GET",
+            "url": "https://this-domain-does-not-exist-12345.com/api",
+            "headers": {},
+            "query": {},
+            "body": {
+              "mode": "json",
+              "template": {}
+            },
+            "response": {
+              "mode": "json",
+              "success_codes": [200]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "mcp": {
+    "embedding_model": "text-embedding-3-small",
+    "persist_path": "embeddings.sqlite",
+    "api_key_env": "OPENAI_API_KEY",
+    "api_base": null,
+    "collection_name": "command_descriptions",
+    "top_k": 3
+  }
+}
