@@ -119,35 +119,52 @@ def _build_request_payload(subcommand: SubcommandDefinition, values: Dict[str, A
 
 def _create_handler(runtime: CommandRuntime, subcommand: SubcommandDefinition):
     def handler(**kwargs):
-        request_payload = _build_request_payload(subcommand, kwargs)
-        script = runtime.get_script(subcommand)
-        prepared = script.prepare(request_payload)
+        try:
+            request_payload = _build_request_payload(subcommand, kwargs)
+            script = runtime.get_script(subcommand)
+            prepared = script.prepare(request_payload)
 
-        # If prepare returns None, skip HTTP request (for test commands)
-        if prepared is None:
-            result_data = None
-        else:
-            timeout = prepared.get("timeout") or request_payload.get("timeout") or runtime.config.http_timeout
-            request_args = {
-                "method": prepared.get("method", request_payload.get("method")),
-                "url": prepared.get("url", request_payload.get("url")),
-                "headers": prepared.get("headers", request_payload.get("headers")),
-                "params": prepared.get("params", request_payload.get("params")),
-                "json": prepared.get("json", request_payload.get("json")),
-                "data": prepared.get("data", request_payload.get("data")),
-            }
-
-            with httpx.Client(timeout=timeout) as client:
-                response = client.request(**request_args)
-            response.raise_for_status()
-
-            if subcommand.request.response.mode == "json":
-                result_data = response.json()
+            # If prepare returns None, skip HTTP request (for test commands)
+            if prepared is None:
+                result_data = None
             else:
-                result_data = response.text
+                timeout = prepared.get("timeout") or request_payload.get("timeout") or runtime.config.http_timeout
+                request_args = {
+                    "method": prepared.get("method", request_payload.get("method")),
+                    "url": prepared.get("url", request_payload.get("url")),
+                    "headers": prepared.get("headers", request_payload.get("headers")),
+                    "params": prepared.get("params", request_payload.get("params")),
+                    "json": prepared.get("json", request_payload.get("json")),
+                    "data": prepared.get("data", request_payload.get("data")),
+                }
 
-        processed = script.process_response(result_data)
-        typer.echo(json.dumps(processed, indent=2) if isinstance(processed, (dict, list)) else processed)
+                try:
+                    with httpx.Client(timeout=timeout) as client:
+                        response = client.request(**request_args)
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as e:
+                    typer.echo(f"HTTP {e.response.status_code}: {e.response.reason_phrase}", err=True)
+                    sys.exit(1)
+                except httpx.RequestError as e:
+                    typer.echo(f"Request failed: {str(e)}", err=True)
+                    sys.exit(1)
+
+                if subcommand.request.response.mode == "json":
+                    try:
+                        result_data = response.json()
+                    except Exception as e:
+                        typer.echo(f"Failed to parse JSON response: {str(e)}", err=True)
+                        sys.exit(1)
+                else:
+                    result_data = response.text
+
+            processed = script.process_response(result_data)
+            typer.echo(json.dumps(processed, indent=2) if isinstance(processed, (dict, list)) else processed)
+        except SystemExit:
+            raise
+        except Exception as e:
+            typer.echo(f"Command failed: {str(e)}", err=True)
+            sys.exit(1)
 
     parameters = [_prepare_parameter(arg) for arg in subcommand.arguments]
     handler.__signature__ = inspect.Signature(parameters)
@@ -188,7 +205,7 @@ def create_app(config_path: Path) -> typer.Typer:
         value = state_manager.get(key)
         if value is None:
             typer.echo(f"No value found for key '{key}'")
-            raise typer.Exit(1)
+            sys.exit(1)
         typer.echo(json.dumps(value, indent=2) if isinstance(value, (dict, list)) else str(value))
     
     @state_app.command("set")
@@ -214,7 +231,7 @@ def create_app(config_path: Path) -> typer.Typer:
             typer.echo(f"Deleted '{key}'")
         else:
             typer.echo(f"Key '{key}' not found")
-            raise typer.Exit(1)
+            sys.exit(1)
     
     @state_app.command("clear")
     def state_clear():
@@ -265,15 +282,23 @@ def main(argv: Sequence[str] | None = None):
     try:
         config_path, remainder = _extract_config_path(argv)
     except typer.BadParameter as exc:
-        typer.echo(str(exc))
-        raise typer.Exit(code=2) from exc
+        typer.echo(str(exc), err=True)
+        sys.exit(2)
 
-    app = create_app(config_path)
+    try:
+        app = create_app(config_path)
+    except Exception as e:
+        typer.echo(f"Failed to load configuration: {str(e)}", err=True)
+        sys.exit(1)
 
     if not remainder and ("-h" in argv or "--help" in argv):
         remainder = ["--help"]
 
-    app(prog_name="dynamic-cli", args=remainder)
+    try:
+        app(prog_name="dynamic-cli", args=remainder)
+    except Exception as e:
+        typer.echo(f"Application error: {str(e)}", err=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

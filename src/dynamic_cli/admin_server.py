@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -1546,7 +1547,7 @@ def serve(
                 "  • Use --config option to specify path explicitly",
                 err=True
             )
-            raise typer.Exit(1)
+            sys.exit(1)
         typer.echo(f"📁 Using config: {config}")
 
     app = create_app(config)

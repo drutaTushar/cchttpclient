@@ -48,8 +48,14 @@ def main():
     # Check if --config is already provided
     if "--config" in sys.argv or "-c" in sys.argv:
         # User provided config explicitly, use normal CLI
-        cli_main()
-        return
+        try:
+            cli_main()
+            return
+        except SystemExit:
+            raise
+        except Exception as e:
+            typer.echo(f"❌ CLI error: {str(e)}", err=True)
+            sys.exit(1)
     
     # Try to find config automatically
     config_path = find_config_file()
@@ -72,7 +78,13 @@ def main():
     sys.argv.insert(1, "--config")
     sys.argv.insert(2, str(config_path))
     
-    cli_main()
+    try:
+        cli_main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        typer.echo(f"❌ CLI error: {str(e)}", err=True)
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

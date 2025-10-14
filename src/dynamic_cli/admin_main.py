@@ -71,7 +71,7 @@ It will automatically find your project's .dynamic-cli/config.json file.
     try:
         app = create_app(config_path)
         print(f"🌐 Admin interface available at: http://{host}:{port}/ui")
-        uvicorn.run(app, host=host, port=port)
+        uvicorn.run(app, host=host, port=port, log_level="warning")
     except KeyboardInterrupt:
         print("\n👋 Admin server stopped")
     except Exception as e:

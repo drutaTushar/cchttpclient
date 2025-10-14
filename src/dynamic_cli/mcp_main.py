@@ -73,10 +73,18 @@ Connect your LLM client to the SSE endpoint.
         original_argv = sys.argv[:]
         sys.argv = ["dynamic_cli_mcp_server.py", "--config", str(config_path), "--host", host, "--port", str(port)]
         
-        dynamic_cli_mcp_server.main()
+        try:
+            dynamic_cli_mcp_server.main()
+        except SystemExit:
+            raise
+        except Exception as inner_e:
+            print(f"❌ MCP server error: {inner_e}", file=sys.stderr)
+            sys.exit(1)
         
     except KeyboardInterrupt:
         print("\n👋 MCP server stopped")
+    except SystemExit:
+        raise
     except Exception as e:
         print(f"❌ Server error: {e}", file=sys.stderr)
         sys.exit(1)

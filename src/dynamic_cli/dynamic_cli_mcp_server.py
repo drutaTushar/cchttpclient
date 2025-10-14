@@ -21,9 +21,10 @@ import uvicorn
 from .config import CLIConfig
 from .embedding import EmbeddingStore, EmbeddingRecord
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging - minimal output for LLM consumption
+logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
 logger = logging.getLogger("dynamic-cli-mcp-server")
+logger.setLevel(logging.WARNING)
 
 # Global variables for server state
 config: CLIConfig | None = None
