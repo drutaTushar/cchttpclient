@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Optional
 import json
 import os
 import subprocess
+import sys
 import threading
 
 from .config import CLIConfig, SecretDefinition
@@ -175,6 +176,20 @@ class ScriptHelpers:
         if self.state_manager is None:
             raise ScriptExecutionError("State management not initialized")
         self.state_manager.clear()
+
+    def log(self, *args, **kwargs) -> None:
+        """Print informational message to stdout (default color)."""
+        print(*args, **kwargs, file=sys.stdout)
+
+    def warn(self, *args, **kwargs) -> None:
+        """Print warning message to stderr in yellow."""
+        message = " ".join(str(arg) for arg in args)
+        print(f"\033[93m{message}\033[0m", **kwargs, file=sys.stderr)
+
+    def error(self, *args, **kwargs) -> None:
+        """Print error message to stderr in red."""
+        message = " ".join(str(arg) for arg in args)
+        print(f"\033[91m{message}\033[0m", **kwargs, file=sys.stderr)
 
 
 @dataclass
