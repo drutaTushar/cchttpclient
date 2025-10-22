@@ -4,7 +4,6 @@ Use this prompt when asking an LLM to generate a new command/subcommand for the 
 
 ## Prompt Template
 
-```
 You are a Dynamic CLI command generator. Your task is to:
 
 1. **Analyze the request** and generate a new command/subcommand configuration
@@ -135,6 +134,116 @@ Arguments are NOT accessed via helpers.arg(). Instead, arguments are automatical
 - **header**: Adds to HTTP headers
 - **json**: Adds to JSON request body
 - **form**: Adds to form data body
+
+## File Import Support
+
+The Dynamic CLI supports curl-style file imports using the `@filename` syntax. Any argument can accept a file path prefixed with `@`, and the file content will be automatically read before processing.
+
+### How It Works
+
+1. **Detection**: When an argument value starts with `@`, it's treated as a file path
+2. **File Reading**: The file content is read from the filesystem (relative or absolute paths supported)
+3. **Type Conversion**: After reading, normal type conversion applies (e.g., JSON parsing if `type: "json"`)
+4. **Prepare Handler**: The prepare handler receives the actual file content, not the filename
+
+### Syntax
+
+```bash
+# Read JSON from file
+dynamic-cli api create-user @user.json
+
+# Read token from file (for headers)
+dynamic-cli api call --token @token.txt @payload.json
+
+# Relative paths (resolved from current working directory)
+dynamic-cli api submit @./data/request.json
+
+# Absolute paths
+dynamic-cli api update @/tmp/payload.json
+```
+
+### Use Cases
+
+**1. Large JSON Payloads**
+```bash
+# Instead of pasting JSON inline
+dynamic-cli api create-user '{"name": "Alice", "email": "alice@example.com", "roles": [...]}'
+
+# Read from file
+dynamic-cli api create-user @user.json
+```
+
+**2. Secret Tokens from Files**
+```bash
+# Read authentication token from file
+dynamic-cli api call --token @~/.secrets/api-token.txt @request.json
+```
+
+**3. Multi-line Content**
+```bash
+# Complex JSON with formatting preserved
+dynamic-cli api submit @formatted-data.json
+```
+
+**4. Any Argument Location**
+File imports work for all argument locations:
+- **JSON body**: `dynamic-cli api create @data.json`
+- **Headers**: `dynamic-cli api call --auth-header @token.txt`
+- **Query params**: `dynamic-cli api search --filter @filter.json`
+- **Path params**: `dynamic-cli api get @id.txt` (if the ID is in a file)
+
+### Error Handling
+
+If a file doesn't exist or can't be read, the CLI will exit with a clear error message:
+```
+Error: File not found: /path/to/file.json
+```
+
+### Best Practices
+
+1. **Use relative paths** for project-specific files: `@./config/payload.json`
+2. **Use absolute paths** for shared secrets: `@~/.secrets/token.txt`
+3. **Keep JSON files formatted** for readability - the CLI handles multi-line content
+4. **Combine with prepare handlers** - the prepare function receives parsed content and can further process it
+
+### Example in Command Configuration
+
+Arguments that receive file imports work seamlessly with existing configurations:
+
+```json
+{
+  "arguments": [
+    {
+      "name": "data",
+      "help": "JSON data (can use @filename to read from file)",
+      "type": "json",
+      "required": true,
+      "location": "json"
+    },
+    {
+      "name": "auth_token",
+      "help": "Authentication token (can use @filename to read from file)",
+      "param_type": "option",
+      "cli_name": "--token",
+      "type": "str",
+      "location": "header",
+      "target": "Authorization"
+    }
+  ]
+}
+```
+
+Users can then invoke with:
+```bash
+# Inline values
+dynamic-cli api call --token "abc123" '{"user": "Alice"}'
+
+# File imports
+dynamic-cli api call --token @token.txt @data.json
+
+# Mixed (file for complex data, inline for simple values)
+dynamic-cli api call --token "abc123" @data.json
+```
 
 ## Code Generation Guidelines
 
@@ -318,7 +427,10 @@ def process_response(response, helpers):
 ```
 
 Now proceed with generating the command configuration based on the user's requirements.
-```
+
+---
+PROMPT TEMPLATE END
+---
 
 ## Built-in State Management Commands
 
