@@ -245,7 +245,18 @@ def _write_test_files(tmp_path: Path, server_port: int) -> Path:
                     {
                         "name": "call",
                         "help": "",
-                        "script_section": "mock_call",
+                        "prepare_code": (
+                            "def prepare(request, helpers):\n"
+                            "    request['headers']['X-Auth'] = f\"Bearer {helpers.secret('api_key')}\"\n"
+                            "    request['json']['payload']['injected'] = True\n"
+                            "    request['json']['meta'] = {'port': request['url'].split(':')[-1]}\n"
+                            "    return request"
+                        ),
+                        "response_code": (
+                            "def process_response(response, helpers):\n"
+                            "    response['processed'] = True\n"
+                            "    return response"
+                        ),
                         "arguments": [
                             {
                                 "name": "payload",
@@ -334,3 +345,129 @@ def test_cli_invokes_configured_request(mock_server, tmp_path):
     assert body["payload"]["foo"] == "bar"
     assert body["payload"]["injected"] is True
     assert str(mock_server.server_address[1]) in body["meta"]["port"]
+
+
+def test_file_import_with_at_syntax(mock_server, tmp_path):
+    """Test that @filename syntax reads file content correctly."""
+
+    # Create a test JSON file
+    test_data = {"name": "Alice", "email": "alice@example.com"}
+    json_file = tmp_path / "test_payload.json"
+    json_file.write_text(json.dumps(test_data), encoding="utf-8")
+
+    # Create config with command that uses the file
+    config_path = _write_test_files(tmp_path, mock_server.server_address[1])
+    config = CLIConfig.load(config_path)
+    runtime = CommandRuntime(config)
+    subcommand = config.commands[0].subcommands[0]
+    handler = _create_handler(runtime, subcommand)
+
+    # Use @filename syntax
+    with contextlib.redirect_stdout(io.StringIO()):
+        handler(payload=f"@{json_file}", user_token="external")
+
+    # Verify the file content was read and sent
+    recorded = _RecordingHandler.received
+    body = json.loads(recorded["body"])
+    assert body["payload"]["name"] == "Alice"
+    assert body["payload"]["email"] == "alice@example.com"
+
+
+def test_file_import_with_relative_path(mock_server, tmp_path, monkeypatch):
+    """Test that relative paths are resolved correctly."""
+
+    # Change to tmp_path directory
+    monkeypatch.chdir(tmp_path)
+
+    # Create a test JSON file in current directory
+    test_data = {"status": "active"}
+    json_file = tmp_path / "relative_payload.json"
+    json_file.write_text(json.dumps(test_data), encoding="utf-8")
+
+    config_path = _write_test_files(tmp_path, mock_server.server_address[1])
+    config = CLIConfig.load(config_path)
+    runtime = CommandRuntime(config)
+    subcommand = config.commands[0].subcommands[0]
+    handler = _create_handler(runtime, subcommand)
+
+    # Use relative path
+    with contextlib.redirect_stdout(io.StringIO()):
+        handler(payload="@relative_payload.json", user_token="external")
+
+    recorded = _RecordingHandler.received
+    body = json.loads(recorded["body"])
+    assert body["payload"]["status"] == "active"
+
+
+def test_file_import_string_value_in_header(mock_server, tmp_path):
+    """Test that file import works for string values in headers."""
+
+    # Create a test token file
+    token_file = tmp_path / "token.txt"
+    token_file.write_text("secret-token-12345", encoding="utf-8")
+
+    config_path = _write_test_files(tmp_path, mock_server.server_address[1])
+    config = CLIConfig.load(config_path)
+    runtime = CommandRuntime(config)
+    subcommand = config.commands[0].subcommands[0]
+    handler = _create_handler(runtime, subcommand)
+
+    # Use @filename for header value
+    with contextlib.redirect_stdout(io.StringIO()):
+        handler(payload='{"test": "data"}', user_token=f"@{token_file}")
+
+    recorded = _RecordingHandler.received
+    headers: Dict[str, str] = recorded["headers"]  # type: ignore[assignment]
+    assert headers["X-User"] == "secret-token-12345"
+
+
+def test_file_import_missing_file_error(mock_server, tmp_path):
+    """Test that missing file produces a clear error message."""
+
+    config_path = _write_test_files(tmp_path, mock_server.server_address[1])
+    config = CLIConfig.load(config_path)
+    runtime = CommandRuntime(config)
+    subcommand = config.commands[0].subcommands[0]
+    handler = _create_handler(runtime, subcommand)
+
+    # Try to use a non-existent file
+    with contextlib.redirect_stdout(io.StringIO()) as stdout, \
+         contextlib.redirect_stderr(io.StringIO()) as stderr:
+        try:
+            handler(payload="@nonexistent.json", user_token="external")
+        except SystemExit as e:
+            assert e.code == 1
+            error_output = stderr.getvalue()
+            assert "File not found" in error_output
+            assert "nonexistent.json" in error_output
+        else:
+            raise AssertionError("Expected SystemExit but handler succeeded")
+
+
+def test_file_import_with_multiline_content(mock_server, tmp_path):
+    """Test that multiline file content is handled correctly."""
+
+    # Create a file with multiline JSON (pretty-printed)
+    test_data = {
+        "users": [
+            {"id": 1, "name": "Alice"},
+            {"id": 2, "name": "Bob"}
+        ]
+    }
+    json_file = tmp_path / "multiline.json"
+    json_file.write_text(json.dumps(test_data, indent=2), encoding="utf-8")
+
+    config_path = _write_test_files(tmp_path, mock_server.server_address[1])
+    config = CLIConfig.load(config_path)
+    runtime = CommandRuntime(config)
+    subcommand = config.commands[0].subcommands[0]
+    handler = _create_handler(runtime, subcommand)
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        handler(payload=f"@{json_file}", user_token="external")
+
+    recorded = _RecordingHandler.received
+    body = json.loads(recorded["body"])
+    assert len(body["payload"]["users"]) == 2
+    assert body["payload"]["users"][0]["name"] == "Alice"
+    assert body["payload"]["users"][1]["name"] == "Bob"

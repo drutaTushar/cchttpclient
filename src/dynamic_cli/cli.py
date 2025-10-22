@@ -90,6 +90,24 @@ def _build_request_payload(subcommand: SubcommandDefinition, values: Dict[str, A
         value = values.get(argument.name)
         if value is None:
             continue
+
+        # Handle file imports with @filename syntax
+        if isinstance(value, str) and value.startswith('@'):
+            filepath = Path(value[1:])  # Remove @ prefix
+            # Resolve relative paths from current working directory
+            if not filepath.is_absolute():
+                filepath = Path.cwd() / filepath
+
+            if not filepath.exists():
+                typer.echo(f"Error: File not found: {filepath}", err=True)
+                sys.exit(1)
+
+            try:
+                value = filepath.read_text(encoding='utf-8')
+            except Exception as e:
+                typer.echo(f"Error reading file {filepath}: {str(e)}", err=True)
+                sys.exit(1)
+
         if argument.type == "json" and value is not None:
             value = TYPE_MAP["json"](value)
         target_key = argument.target or argument.name
