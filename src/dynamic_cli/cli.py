@@ -287,6 +287,170 @@ def create_app(config_path: Path) -> typer.Typer:
     
     root_app.add_typer(state_app, name="state")
 
+    # Add built-in command introspection commands
+    cmd_app = typer.Typer(help="Inspect and describe command configurations")
+
+    @cmd_app.command("desc")
+    def cmd_desc(
+        command_path: str = typer.Argument(
+            ...,
+            help="Command path to describe (e.g., 'jp users' or 'jp.users')"
+        ),
+        output_json: bool = typer.Option(
+            False,
+            "--json",
+            help="Output as JSON instead of formatted text"
+        ),
+    ):
+        """Show detailed configuration for a command including Python code.
+
+        Examples:
+            dynamic-cli cmd desc "jp users"
+            dynamic-cli cmd desc jp.users
+            dynamic-cli cmd desc "jp users" --json
+        """
+        # Parse command path - support both "jp users" and "jp.users" formats
+        parts = command_path.replace(".", " ").split()
+        if len(parts) < 2:
+            typer.echo(f"Error: Command path must include command and subcommand (e.g., 'jp users')", err=True)
+            sys.exit(1)
+
+        cmd_name, subcmd_name = parts[0], parts[1]
+
+        # Find the command
+        target_command = None
+        for cmd in config.commands:
+            if cmd.name == cmd_name:
+                target_command = cmd
+                break
+
+        if target_command is None:
+            available = ", ".join(c.name for c in config.commands)
+            typer.echo(f"Error: Command '{cmd_name}' not found. Available: {available}", err=True)
+            sys.exit(1)
+
+        # Find the subcommand
+        target_subcommand = None
+        for sub in target_command.subcommands:
+            if sub.name == subcmd_name:
+                target_subcommand = sub
+                break
+
+        if target_subcommand is None:
+            available = ", ".join(s.name for s in target_command.subcommands)
+            typer.echo(f"Error: Subcommand '{subcmd_name}' not found in '{cmd_name}'. Available: {available}", err=True)
+            sys.exit(1)
+
+        if output_json:
+            # JSON output mode
+            output = {
+                "command": cmd_name,
+                "subcommand": subcmd_name,
+                "help": target_subcommand.help,
+                "request": {
+                    "method": target_subcommand.request.method,
+                    "url": target_subcommand.request.url,
+                    "headers": target_subcommand.request.headers,
+                    "query": target_subcommand.request.query,
+                    "body": {
+                        "mode": target_subcommand.request.body.mode,
+                        "template": target_subcommand.request.body.template,
+                    },
+                    "response": {
+                        "mode": target_subcommand.request.response.mode,
+                        "success_codes": target_subcommand.request.response.success_codes,
+                    },
+                    "timeout": target_subcommand.request.timeout,
+                },
+                "arguments": [
+                    {
+                        "name": arg.name,
+                        "help": arg.help,
+                        "param_type": arg.param_type,
+                        "cli_name": arg.cli_name,
+                        "aliases": arg.aliases,
+                        "type": arg.type,
+                        "required": arg.required,
+                        "default": arg.default,
+                        "location": arg.location,
+                        "target": arg.target,
+                    }
+                    for arg in target_subcommand.arguments
+                ],
+                "prepare_code": target_subcommand.prepare_code,
+                "response_code": target_subcommand.response_code,
+            }
+            typer.echo(json.dumps(output, indent=2, default=str))
+            return
+
+        # Human-readable formatted output
+        req = target_subcommand.request
+
+        # Header
+        typer.echo(f"{'=' * 60}")
+        typer.echo(f"Command: {cmd_name} {subcmd_name}")
+        typer.echo(f"{'=' * 60}")
+        typer.echo(f"\nDescription: {target_subcommand.help or '(no description)'}")
+
+        # Request info
+        typer.echo(f"\n{'─' * 40}")
+        typer.echo("REQUEST")
+        typer.echo(f"{'─' * 40}")
+        typer.echo(f"  Method:  {req.method}")
+        typer.echo(f"  URL:     {req.url}")
+        if req.headers:
+            typer.echo(f"  Headers: {json.dumps(req.headers)}")
+        if req.query:
+            typer.echo(f"  Query:   {json.dumps(req.query)}")
+        if req.body.template:
+            typer.echo(f"  Body:    {json.dumps(req.body.template, indent=2)}")
+        if req.timeout:
+            typer.echo(f"  Timeout: {req.timeout}s")
+        typer.echo(f"  Response Mode: {req.response.mode}")
+
+        # Arguments
+        if target_subcommand.arguments:
+            typer.echo(f"\n{'─' * 40}")
+            typer.echo("ARGUMENTS")
+            typer.echo(f"{'─' * 40}")
+            for arg in target_subcommand.arguments:
+                req_marker = "*" if arg.required else " "
+                cli_name = arg.cli_name or (f"--{arg.name.replace('_', '-')}" if arg.param_type == "option" else arg.name)
+                default_str = f" (default: {arg.default})" if arg.default is not None else ""
+                typer.echo(f"  {req_marker} {cli_name} [{arg.type}] -> {arg.location}:{arg.target or arg.name}{default_str}")
+                if arg.help:
+                    typer.echo(f"      {arg.help}")
+
+        # Prepare code
+        typer.echo(f"\n{'─' * 40}")
+        typer.echo("PREPARE CODE")
+        typer.echo(f"{'─' * 40}")
+        typer.echo(target_subcommand.prepare_code)
+
+        # Response code
+        typer.echo(f"{'─' * 40}")
+        typer.echo("RESPONSE CODE")
+        typer.echo(f"{'─' * 40}")
+        typer.echo(target_subcommand.response_code)
+
+    @cmd_app.command("list")
+    def cmd_list():
+        """List all available commands and subcommands."""
+        output = []
+        for cmd in config.commands:
+            cmd_info = {
+                "name": cmd.name,
+                "help": cmd.help,
+                "subcommands": [
+                    {"name": sub.name, "help": sub.help}
+                    for sub in cmd.subcommands
+                ]
+            }
+            output.append(cmd_info)
+        typer.echo(json.dumps(output, indent=2))
+
+    root_app.add_typer(cmd_app, name="cmd")
+
     @root_app.callback()
     def _callback():
         """Shared CLI callback for initialization."""
